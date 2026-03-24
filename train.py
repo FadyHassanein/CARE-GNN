@@ -1,146 +1,314 @@
 import time
 import os
 import random
+import logging
 import argparse
+
+import numpy as np
+import torch
+import torch.nn as nn
 from sklearn.model_selection import train_test_split
 
-from utils import *
-from model import *
-from layers import *
-from graphsage import *
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+from utils import (load_data, normalize, pos_neg_split, undersample,
+                   test_sage, test_care, seed_everything, get_device,
+                   save_checkpoint, EarlyStopping)
+from model import OneLayerCARE, MultiLayerCARE
+from layers import InterAgg, IntraAgg
+from graphsage import GraphSage, MeanAggregator, Encoder
+from config import CareConfig
 
 """
-	Training CARE-GNN
-	Paper: Enhancing Graph Neural Network-based Fraud Detectors against Camouflaged Fraudsters
-	Source: https://github.com/YingtongDou/CARE-GNN
+    Training CARE-GNN
+    Paper: Enhancing Graph Neural Network-based Fraud Detectors against Camouflaged Fraudsters
+    Source: https://github.com/YingtongDou/CARE-GNN
 """
 
-parser = argparse.ArgumentParser()
-
-# dataset and model dependent args
-parser.add_argument('--data', type=str, default='yelp', help='The dataset name. [yelp, amazon]')
-parser.add_argument('--model', type=str, default='CARE', help='The model name. [CARE, SAGE]')
-parser.add_argument('--inter', type=str, default='GNN', help='The inter-relation aggregator type. [Att, Weight, Mean, GNN]')
-parser.add_argument('--batch-size', type=int, default=1024, help='Batch size 1024 for yelp, 256 for amazon.')
-
-# hyper-parameters
-parser.add_argument('--lr', type=float, default=0.01, help='Initial learning rate.')
-parser.add_argument('--lambda_1', type=float, default=2, help='Simi loss weight.')
-parser.add_argument('--lambda_2', type=float, default=1e-3, help='Weight decay (L2 loss weight).')
-parser.add_argument('--emb-size', type=int, default=64, help='Node embedding size at the last layer.')
-parser.add_argument('--num-epochs', type=int, default=31, help='Number of epochs.')
-parser.add_argument('--test-epochs', type=int, default=3, help='Epoch interval to run test set.')
-parser.add_argument('--under-sample', type=int, default=1, help='Under-sampling scale.')
-parser.add_argument('--step-size', type=float, default=2e-2, help='RL action step size')
-
-# other args
-parser.add_argument('--no-cuda', action='store_true', default=False, help='Disables CUDA training.')
-parser.add_argument('--seed', type=int, default=72, help='Random seed.')
+logger = logging.getLogger(__name__)
 
 
-args = parser.parse_args()
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-print(f'run on {args.data}')
+def setup_logging(log_dir='logs', level=logging.INFO):
+    """Configure logging to both file and console."""
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, f'train_{time.strftime("%Y%m%d_%H%M%S")}.log')
 
-# load graph, feature, and label
-[homo, relation1, relation2, relation3], feat_data, labels = load_data(args.data)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# train_test split
-np.random.seed(args.seed)
-random.seed(args.seed)
-if args.data == 'yelp':
-	index = list(range(len(labels)))
-	idx_train, idx_test, y_train, y_test = train_test_split(index, labels, stratify=labels, test_size=0.60,
-															random_state=2, shuffle=True)
-elif args.data == 'amazon':  # amazon
-	# 0-3304 are unlabeled nodes
-	index = list(range(3305, len(labels)))
-	idx_train, idx_test, y_train, y_test = train_test_split(index, labels[3305:], stratify=labels[3305:],
-															test_size=0.60, random_state=2, shuffle=True)
+    # file handler
+    fh = logging.FileHandler(log_file)
+    fh.setLevel(level)
+    fh.setFormatter(formatter)
 
-# split pos neg sets for under-sampling
-train_pos, train_neg = pos_neg_split(idx_train, y_train)
+    # console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
+    ch.setFormatter(formatter)
 
-# initialize model input
-features = nn.Embedding(feat_data.shape[0], feat_data.shape[1])
-feat_data = normalize(feat_data)
-features.weight = nn.Parameter(torch.FloatTensor(feat_data), requires_grad=False)
-if args.cuda:
-	features.cuda()
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    root_logger.addHandler(fh)
+    root_logger.addHandler(ch)
 
-# set input graph
-if args.model == 'SAGE':
-	adj_lists = homo
-else:
-	adj_lists = [relation1, relation2, relation3]
+    return log_file
 
-print(f'Model: {args.model}, Inter-AGG: {args.inter}, emb_size: {args.emb_size}.')
 
-# build one-layer models
-if args.model == 'CARE':
-	intra1 = IntraAgg(features, feat_data.shape[1], cuda=args.cuda)
-	intra2 = IntraAgg(features, feat_data.shape[1], cuda=args.cuda)
-	intra3 = IntraAgg(features, feat_data.shape[1], cuda=args.cuda)
-	inter1 = InterAgg(features, feat_data.shape[1], args.emb_size, adj_lists, [intra1, intra2, intra3], inter=args.inter,
-					  step_size=args.step_size, cuda=args.cuda)
-elif args.model == 'SAGE':
-	agg1 = MeanAggregator(features, cuda=args.cuda)
-	enc1 = Encoder(features, feat_data.shape[1], args.emb_size, adj_lists, agg1, gcn=True, cuda=args.cuda)
+def parse_args():
+    parser = argparse.ArgumentParser()
 
-if args.model == 'CARE':
-	gnn_model = OneLayerCARE(2, inter1, args.lambda_1)
-elif args.model == 'SAGE':
-	# the vanilla GraphSAGE model as baseline
-	enc1.num_samples = 5
-	gnn_model = GraphSage(2, enc1)
+    # dataset and model dependent args
+    parser.add_argument('--data', type=str, default='yelp', help='The dataset name. [yelp, amazon]')
+    parser.add_argument('--model', type=str, default='CARE', help='The model name. [CARE, SAGE, MULTI_CARE]')
+    parser.add_argument('--inter', type=str, default='GNN', help='The inter-relation aggregator type. [Att, Weight, Mean, GNN]')
+    parser.add_argument('--batch-size', type=int, default=1024, help='Batch size 1024 for yelp, 256 for amazon.')
 
-if args.cuda:
-	gnn_model.cuda()
+    # hyper-parameters
+    parser.add_argument('--lr', type=float, default=0.01, help='Initial learning rate.')
+    parser.add_argument('--lambda_1', type=float, default=2, help='Simi loss weight.')
+    parser.add_argument('--lambda_2', type=float, default=1e-3, help='Weight decay (L2 loss weight).')
+    parser.add_argument('--emb-size', type=int, default=64, help='Node embedding size at the last layer.')
+    parser.add_argument('--num-epochs', type=int, default=31, help='Number of epochs.')
+    parser.add_argument('--test-epochs', type=int, default=3, help='Epoch interval to run test set.')
+    parser.add_argument('--under-sample', type=int, default=1, help='Under-sampling scale.')
+    parser.add_argument('--step-size', type=float, default=2e-2, help='RL action step size')
+    parser.add_argument('--dropout', type=float, default=0.6, help='Dropout rate.')
 
-optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, gnn_model.parameters()), lr=args.lr, weight_decay=args.lambda_2)
-times = []
-performance_log = []
+    # device and reproducibility
+    parser.add_argument('--device', type=str, default='auto', help='Device: auto, cpu, cuda, cuda:0, etc.')
+    parser.add_argument('--seed', type=int, default=72, help='Random seed.')
 
-# train the model
-for epoch in range(args.num_epochs):
-	# randomly under-sampling negative nodes for each epoch
-	sampled_idx_train = undersample(train_pos, train_neg, scale=1)
-	rd.shuffle(sampled_idx_train)
+    # training improvements
+    parser.add_argument('--grad-clip', type=float, default=1.0, help='Gradient clipping max norm.')
+    parser.add_argument('--patience', type=int, default=10, help='Early stopping patience.')
+    parser.add_argument('--use-lr-scheduler', action='store_true', default=True, help='Use learning rate scheduler.')
+    parser.add_argument('--lr-scheduler-patience', type=int, default=5, help='LR scheduler patience.')
+    parser.add_argument('--lr-scheduler-factor', type=float, default=0.5, help='LR scheduler reduction factor.')
 
-	# send number of batches to model to let the RLModule know the training progress
-	num_batches = int(len(sampled_idx_train) / args.batch_size) + 1
-	if args.model == 'CARE':
-		inter1.batch_num = num_batches
+    # validation
+    parser.add_argument('--val-size', type=float, default=0.15, help='Validation set size (fraction of total).')
+    parser.add_argument('--use-validation', action='store_true', default=True, help='Use validation set.')
 
-	loss = 0.0
-	epoch_time = 0
+    # checkpointing
+    parser.add_argument('--checkpoint-dir', type=str, default='checkpoints', help='Directory for saving checkpoints.')
+    parser.add_argument('--save-best', action='store_true', default=True, help='Save best model checkpoint.')
 
-	# mini-batch training
-	for batch in range(num_batches):
-		start_time = time.time()
-		i_start = batch * args.batch_size
-		i_end = min((batch + 1) * args.batch_size, len(sampled_idx_train))
-		batch_nodes = sampled_idx_train[i_start:i_end]
-		batch_label = labels[np.array(batch_nodes)]
-		optimizer.zero_grad()
-		if args.cuda:
-			loss = gnn_model.loss(batch_nodes, Variable(torch.cuda.LongTensor(batch_label)))
-		else:
-			loss = gnn_model.loss(batch_nodes, Variable(torch.LongTensor(batch_label)))
-		loss.backward()
-		optimizer.step()
-		end_time = time.time()
-		epoch_time += end_time - start_time
-		loss += loss.item()
+    # multi-layer
+    parser.add_argument('--num-layers', type=int, default=1, help='Number of GNN layers (for MULTI_CARE).')
 
-	print(f'Epoch: {epoch}, loss: {loss.item() / num_batches}, time: {epoch_time}s')
+    # loss function
+    parser.add_argument('--loss', type=str, default='ce', help='Loss function: ce, focal, weighted_ce')
 
-	# testing the model for every $test_epoch$ epoch
-	if epoch % args.test_epochs == 0:
-		if args.model == 'SAGE':
-			test_sage(idx_test, y_test, gnn_model, args.batch_size)
-		else:
-			gnn_auc, label_auc, gnn_recall, label_recall = test_care(idx_test, y_test, gnn_model, args.batch_size)
-			performance_log.append([gnn_auc, label_auc, gnn_recall, label_recall])
+    # GraphSAGE
+    parser.add_argument('--sage-num-samples', type=int, default=5, help='Number of neighbor samples for GraphSAGE.')
+
+    # RL terminal condition
+    parser.add_argument('--rl-patience', type=int, default=5, help='RL convergence patience.')
+    parser.add_argument('--rl-epsilon', type=float, default=1e-4, help='RL convergence epsilon.')
+
+    return parser.parse_args()
+
+
+def get_loss_fn(loss_type, labels=None):
+    """Get loss function by name."""
+    if loss_type == 'ce':
+        return nn.CrossEntropyLoss()
+    elif loss_type == 'focal':
+        from losses import FocalLoss
+        return FocalLoss(gamma=2.0)
+    elif loss_type == 'weighted_ce':
+        from losses import WeightedCrossEntropy
+        return WeightedCrossEntropy(labels=labels)
+    else:
+        raise ValueError(f'Unknown loss function: {loss_type}')
+
+
+def train(args):
+    """Main training function."""
+    device = get_device(args.device)
+    logger.info(f'Using device: {device}')
+
+    # set seeds for reproducibility
+    seed_everything(args.seed)
+
+    # load graph, feature, and label
+    [homo, relation1, relation2, relation3], feat_data, labels = load_data(args.data)
+
+    # train/val/test split
+    if args.data == 'yelp':
+        index = list(range(len(labels)))
+        all_labels = labels
+    elif args.data == 'amazon':
+        # 0-3304 are unlabeled nodes
+        index = list(range(3305, len(labels)))
+        all_labels = labels[3305:]
+
+    if args.use_validation:
+        # first split: train vs (val + test)
+        idx_train, idx_temp, y_train, y_temp = train_test_split(
+            index, all_labels, stratify=all_labels,
+            test_size=args.val_size + 0.60, random_state=2, shuffle=True)
+        # second split: val vs test
+        val_fraction = args.val_size / (args.val_size + 0.60)
+        idx_val, idx_test, y_val, y_test = train_test_split(
+            idx_temp, y_temp, stratify=y_temp,
+            test_size=1 - val_fraction, random_state=2, shuffle=True)
+        logger.info(f'Split: train={len(idx_train)}, val={len(idx_val)}, test={len(idx_test)}')
+    else:
+        idx_train, idx_test, y_train, y_test = train_test_split(
+            index, all_labels, stratify=all_labels,
+            test_size=0.60, random_state=2, shuffle=True)
+        idx_val, y_val = None, None
+        logger.info(f'Split: train={len(idx_train)}, test={len(idx_test)}')
+
+    # split pos neg sets for under-sampling
+    train_pos, train_neg = pos_neg_split(idx_train, y_train)
+
+    # get loss function
+    loss_fn = get_loss_fn(args.loss, labels=y_train)
+
+    # initialize model input
+    features = nn.Embedding(feat_data.shape[0], feat_data.shape[1])
+    feat_data = normalize(feat_data)
+    features.weight = nn.Parameter(torch.FloatTensor(feat_data), requires_grad=False)
+    features = features.to(device)
+
+    # set input graph
+    if args.model == 'SAGE':
+        adj_lists = homo
+    else:
+        adj_lists = [relation1, relation2, relation3]
+
+    logger.info(f'Model: {args.model}, Inter-AGG: {args.inter}, emb_size: {args.emb_size}')
+
+    # build models
+    if args.model == 'CARE':
+        intra_aggs = [IntraAgg(features, feat_data.shape[1], device=device) for _ in range(len(adj_lists))]
+        inter1 = InterAgg(features, feat_data.shape[1], args.emb_size, adj_lists, intra_aggs,
+                          inter=args.inter, step_size=args.step_size, device=device,
+                          dropout=args.dropout, rl_patience=args.rl_patience, rl_epsilon=args.rl_epsilon)
+        gnn_model = OneLayerCARE(2, inter1, args.lambda_1, loss_fn=loss_fn)
+
+    elif args.model == 'MULTI_CARE':
+        inter_layers = []
+        for layer_idx in range(args.num_layers):
+            feat_dim = feat_data.shape[1] if layer_idx == 0 else args.emb_size
+            intra_aggs = [IntraAgg(features, feat_dim, device=device) for _ in range(len(adj_lists))]
+            inter_layer = InterAgg(features, feat_dim, args.emb_size, adj_lists, intra_aggs,
+                                   inter=args.inter, step_size=args.step_size, device=device,
+                                   dropout=args.dropout, rl_patience=args.rl_patience, rl_epsilon=args.rl_epsilon)
+            inter_layers.append(inter_layer)
+        gnn_model = MultiLayerCARE(2, inter_layers, args.lambda_1, loss_fn=loss_fn, dropout=args.dropout)
+
+    elif args.model == 'SAGE':
+        agg1 = MeanAggregator(features, device=device)
+        enc1 = Encoder(features, feat_data.shape[1], args.emb_size, adj_lists, agg1, gcn=True, device=device)
+        enc1.num_samples = args.sage_num_samples
+        gnn_model = GraphSage(2, enc1)
+
+    gnn_model = gnn_model.to(device)
+
+    optimizer = torch.optim.Adam(
+        filter(lambda p: p.requires_grad, gnn_model.parameters()),
+        lr=args.lr, weight_decay=args.lambda_2)
+
+    # learning rate scheduler
+    scheduler = None
+    if args.use_lr_scheduler:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode='max', patience=args.lr_scheduler_patience,
+            factor=args.lr_scheduler_factor, verbose=True)
+
+    # early stopping
+    early_stopping = EarlyStopping(patience=args.patience)
+
+    performance_log = []
+    best_val_auc = 0.0
+
+    # train the model
+    for epoch in range(args.num_epochs):
+        gnn_model.train()
+
+        # randomly under-sampling negative nodes for each epoch
+        sampled_idx_train = undersample(train_pos, train_neg, scale=args.under_sample)
+        random.shuffle(sampled_idx_train)
+
+        # send number of batches to model to let the RLModule know the training progress
+        num_batches = int(len(sampled_idx_train) / args.batch_size) + 1
+        if args.model in ('CARE', 'MULTI_CARE'):
+            if args.model == 'CARE':
+                gnn_model.inter1.batch_num = num_batches
+            else:
+                for inter in gnn_model.inter_layers:
+                    inter.batch_num = num_batches
+
+        epoch_loss = 0.0
+        epoch_time = 0
+
+        # mini-batch training
+        for batch in range(num_batches):
+            start_time = time.time()
+            i_start = batch * args.batch_size
+            i_end = min((batch + 1) * args.batch_size, len(sampled_idx_train))
+            batch_nodes = sampled_idx_train[i_start:i_end]
+            batch_label = labels[np.array(batch_nodes)]
+            optimizer.zero_grad()
+            loss = gnn_model.loss(batch_nodes, torch.LongTensor(batch_label).to(device))
+            loss.backward()
+
+            # gradient clipping
+            torch.nn.utils.clip_grad_norm_(gnn_model.parameters(), args.grad_clip)
+
+            optimizer.step()
+            end_time = time.time()
+            epoch_time += end_time - start_time
+            epoch_loss += loss.item()
+
+        logger.info(f'Epoch: {epoch}, loss: {epoch_loss / num_batches:.4f}, '
+                    f'lr: {optimizer.param_groups[0]["lr"]:.6f}, time: {epoch_time:.2f}s')
+
+        # evaluation
+        if epoch % args.test_epochs == 0:
+            gnn_model.eval()
+            with torch.no_grad():
+                if args.model == 'SAGE':
+                    metrics = test_sage(idx_test, y_test, gnn_model, args.batch_size, device=device)
+                    val_metric = metrics['auc']
+                else:
+                    metrics = test_care(idx_test, y_test, gnn_model, args.batch_size, device=device)
+                    val_metric = metrics['gnn_auc']
+                    performance_log.append(metrics)
+
+                # validation set evaluation
+                if args.use_validation and idx_val is not None:
+                    if args.model == 'SAGE':
+                        val_metrics = test_sage(idx_val, y_val, gnn_model, args.batch_size, device=device)
+                        val_metric = val_metrics['auc']
+                    else:
+                        val_metrics = test_care(idx_val, y_val, gnn_model, args.batch_size, device=device)
+                        val_metric = val_metrics['gnn_auc']
+                    logger.info(f'Validation AUC: {val_metric:.4f}')
+
+                # learning rate scheduling
+                if scheduler is not None:
+                    scheduler.step(val_metric)
+
+                # save best model
+                if args.save_best and val_metric > best_val_auc:
+                    best_val_auc = val_metric
+                    save_checkpoint(gnn_model, optimizer, epoch, metrics,
+                                    os.path.join(args.checkpoint_dir, f'best_{args.model}_{args.data}.pt'))
+                    logger.info(f'New best model saved (AUC: {val_metric:.4f})')
+
+                # early stopping
+                if early_stopping.step(val_metric):
+                    logger.info(f'Early stopping at epoch {epoch}')
+                    break
+
+    logger.info('Training complete.')
+    return gnn_model, performance_log
+
+
+if __name__ == '__main__':
+    args = parse_args()
+    log_file = setup_logging()
+    logger.info(f'Logging to {log_file}')
+    logger.info(f'Arguments: {vars(args)}')
+    train(args)
