@@ -1,7 +1,10 @@
+import logging
+
 import torch
 import torch.nn as nn
 from torch.nn import init
 
+logger = logging.getLogger(__name__)
 
 """
     CARE-GNN Models
@@ -123,4 +126,60 @@ class MultiLayerCARE(nn.Module):
         label_loss = self.xent(label_scores, labels.squeeze())
         gnn_loss = self.xent(gnn_scores, labels.squeeze())
         final_loss = gnn_loss + self.lambda_1 * label_loss
+        return final_loss
+
+
+class CAPNOneLayerCARE(OneLayerCARE):
+    """
+    CAPN-enhanced CARE-GNN model.
+
+    Extends OneLayerCARE with policy gradient loss from the CAPN policy network.
+    The total loss becomes:
+        L = L_gnn + λ₁ * L_label + λ_policy * L_policy
+
+    Where L_policy is the REINFORCE policy gradient loss for adaptive thresholds.
+    """
+
+    def __init__(self, num_classes, inter1, lambda_1, lambda_policy=0.1,
+                 reward_computer=None, loss_fn=None):
+        """
+        :param num_classes: number of output classes
+        :param inter1: InterAgg layer (with CAPN components attached)
+        :param lambda_1: weight for label similarity loss
+        :param lambda_policy: weight for policy gradient loss
+        :param reward_computer: ShapedRewardComputer instance
+        :param loss_fn: optional custom loss function
+        """
+        super(CAPNOneLayerCARE, self).__init__(num_classes, inter1, lambda_1, loss_fn)
+        self.lambda_policy = lambda_policy
+        self.reward_computer = reward_computer
+
+    def loss(self, nodes, labels, train_flag=True):
+        gnn_scores, label_scores = self.forward(nodes, labels, train_flag)
+
+        # standard CARE-GNN losses
+        label_loss = self.xent(label_scores, labels.squeeze())
+        gnn_loss = self.xent(gnn_scores, labels.squeeze())
+        supervised_loss = gnn_loss + self.lambda_1 * label_loss
+
+        # CAPN policy gradient loss
+        policy_loss = torch.tensor(0.0, device=gnn_scores.device)
+        if train_flag and self.inter1.use_capn and self.reward_computer is not None:
+            # compute batch accuracy for reward
+            with torch.no_grad():
+                preds = gnn_scores.argmax(dim=1)
+                batch_acc = (preds == labels.squeeze()).float().mean().item()
+
+            # compute shaped reward
+            avg_dist = self.inter1.get_capn_avg_dist()
+            capn_thresholds = self.inter1.get_capn_thresholds()
+            reward = self.reward_computer.compute_reward(avg_dist, batch_acc, capn_thresholds)
+
+            # compute policy gradient loss
+            policy_loss = self.inter1.get_capn_policy_loss(reward)
+
+            logger.debug(f'CAPN reward: {reward:.4f}, policy_loss: {policy_loss.item():.4f}, '
+                         f'batch_acc: {batch_acc:.4f}')
+
+        final_loss = supervised_loss + self.lambda_policy * policy_loss
         return final_loss

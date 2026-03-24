@@ -218,3 +218,131 @@ def plot_ablation_comparison(results_dict, metric='gnn_auc', save_path='figures/
     fig.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close(fig)
     logger.info(f'Ablation comparison plot saved to {save_path}')
+
+
+# ===================== CAPN-Specific Visualizations =====================
+
+def plot_capn_threshold_distribution(thresholds_per_relation, labels, relation_names=None,
+                                     save_path='figures/capn_threshold_dist.pdf'):
+    """
+    Plot per-node threshold distributions for fraud vs benign nodes.
+    Key CAPN insight: fraudulent nodes should get lower thresholds (more aggressive filtering).
+
+    :param thresholds_per_relation: list of threshold tensors [num_nodes] per relation
+    :param labels: node labels (0=benign, 1=fraud)
+    :param relation_names: optional relation names
+    :param save_path: path to save figure
+    """
+    _check_matplotlib()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    num_relations = len(thresholds_per_relation)
+    if relation_names is None:
+        relation_names = [f'Relation {i+1}' for i in range(num_relations)]
+
+    labels = np.array(labels)
+    fig, axes = plt.subplots(1, num_relations, figsize=(5 * num_relations, 4))
+    if num_relations == 1:
+        axes = [axes]
+
+    for r, (thresholds, name) in enumerate(zip(thresholds_per_relation, relation_names)):
+        if hasattr(thresholds, 'cpu'):
+            thresholds = thresholds.cpu().numpy()
+        else:
+            thresholds = np.array(thresholds)
+
+        benign_t = thresholds[labels == 0]
+        fraud_t = thresholds[labels == 1]
+
+        axes[r].hist(benign_t, bins=30, alpha=0.6, color='steelblue', label=f'Benign (μ={benign_t.mean():.3f})', density=True)
+        axes[r].hist(fraud_t, bins=30, alpha=0.6, color='coral', label=f'Fraud (μ={fraud_t.mean():.3f})', density=True)
+        axes[r].set_xlabel('Threshold', fontsize=11)
+        axes[r].set_ylabel('Density', fontsize=11)
+        axes[r].set_title(name, fontsize=13)
+        axes[r].legend(fontsize=9)
+        axes[r].grid(True, alpha=0.3)
+
+    fig.suptitle('CAPN Per-Node Threshold Distributions', fontsize=14)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    logger.info(f'CAPN threshold distribution plot saved to {save_path}')
+
+
+def plot_capn_reward_curves(reward_log, save_path='figures/capn_rewards.pdf'):
+    """
+    Plot CAPN reward component curves over training batches.
+
+    :param reward_log: list of reward dicts from ShapedRewardComputer.reward_log
+    :param save_path: path to save figure
+    """
+    _check_matplotlib()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    steps = range(len(reward_log))
+    rewards = [r['reward'] for r in reward_log]
+    dist_rewards = [r['dist_reward'] for r in reward_log]
+    acc_rewards = [r['acc_reward'] for r in reward_log]
+    reg_penalties = [r['reg_penalty'] for r in reward_log]
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+
+    axes[0, 0].plot(steps, rewards, 'b-', linewidth=1, alpha=0.7)
+    axes[0, 0].set_title('Total Shaped Reward', fontsize=12)
+    axes[0, 0].set_ylabel('Reward', fontsize=11)
+    axes[0, 0].grid(True, alpha=0.3)
+
+    axes[0, 1].plot(steps, dist_rewards, 'g-', linewidth=1, alpha=0.7)
+    axes[0, 1].set_title('Distance Improvement', fontsize=12)
+    axes[0, 1].grid(True, alpha=0.3)
+
+    axes[1, 0].plot(steps, acc_rewards, 'r-', linewidth=1, alpha=0.7)
+    axes[1, 0].set_title('Accuracy Signal', fontsize=12)
+    axes[1, 0].set_xlabel('Training Step', fontsize=11)
+    axes[1, 0].set_ylabel('Reward', fontsize=11)
+    axes[1, 0].grid(True, alpha=0.3)
+
+    axes[1, 1].plot(steps, reg_penalties, 'm-', linewidth=1, alpha=0.7)
+    axes[1, 1].set_title('Regularization Penalty', fontsize=12)
+    axes[1, 1].set_xlabel('Training Step', fontsize=11)
+    axes[1, 1].grid(True, alpha=0.3)
+
+    fig.suptitle('CAPN Shaped Reward Components', fontsize=14)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    logger.info(f'CAPN reward curves saved to {save_path}')
+
+
+def plot_capn_policy_convergence(threshold_means_log, relation_names=None,
+                                  save_path='figures/capn_policy_convergence.pdf'):
+    """
+    Plot mean threshold convergence for CAPN policy network.
+
+    :param threshold_means_log: list of [mean_t_r1, mean_t_r2, ...] per evaluation step
+    :param relation_names: optional relation names
+    :param save_path: path to save figure
+    """
+    _check_matplotlib()
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    data = np.array(threshold_means_log)
+    num_relations = data.shape[1] if data.ndim > 1 else 1
+
+    if relation_names is None:
+        relation_names = [f'Relation {i+1}' for i in range(num_relations)]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for r in range(num_relations):
+        vals = data[:, r] if data.ndim > 1 else data
+        ax.plot(vals, label=relation_names[r], linewidth=2)
+
+    ax.set_xlabel('Evaluation Step', fontsize=12)
+    ax.set_ylabel('Mean Threshold', fontsize=12)
+    ax.set_title('CAPN Policy Network: Mean Threshold Convergence', fontsize=14)
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close(fig)
+    logger.info(f'CAPN policy convergence plot saved to {save_path}')
