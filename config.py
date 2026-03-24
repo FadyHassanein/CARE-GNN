@@ -66,3 +66,14 @@ class CareConfig:
     # cross-validation
     num_folds: int = 5
     use_cross_validation: bool = False
+
+    # CAPN: Camouflage-Aware Policy Network
+    use_capn: bool = False
+    policy_lr: float = 1e-3
+    policy_hidden: int = 64
+    lambda_policy: float = 0.1
+    reward_w1: float = 0.5
+    reward_w2: float = 0.3
+    reward_w3: float = 0.2
+    gamma_init: float = 0.7
+    llm_priors_file: str = ''

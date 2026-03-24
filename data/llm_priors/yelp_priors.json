@@ -1,0 +1,26 @@
+{
+  "dataset": "yelp",
+  "relations": [
+    {
+      "name": "R-U-R",
+      "description": "Reviews posted by the same user",
+      "importance": 0.85,
+      "camouflage_risk": 0.55,
+      "notes": "High feature similarity (0.991) but moderate label similarity (0.909). Fraudsters sharing user accounts create camouflage through feature mimicry."
+    },
+    {
+      "name": "R-T-R",
+      "description": "Reviews sharing the same product rating (stars)",
+      "importance": 0.60,
+      "camouflage_risk": 0.35,
+      "notes": "Moderate relation \u2014 star ratings are easy to manipulate but provide weak structural signal for fraud detection."
+    },
+    {
+      "name": "R-S-R",
+      "description": "Reviews with the same text sentiment polarity score",
+      "importance": 0.70,
+      "camouflage_risk": 0.45,
+      "notes": "Sentiment is harder to fake consistently. Provides moderate signal for detecting coordinated fraud campaigns."
+    }
+  ]
+}

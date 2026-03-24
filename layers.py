@@ -22,10 +22,13 @@ class InterAgg(nn.Module):
                  inter='GNN', step_size=0.02, device=None,
                  dropout=0.6, initial_thresholds=None,
                  threshold_min=0.001, threshold_max=0.999,
-                 rl_patience=5, rl_epsilon=1e-4):
+                 rl_patience=5, rl_epsilon=1e-4,
+                 policy_network=None, state_constructor=None,
+                 enhanced_label_clf=None, multi_view_distance=None):
         """
         Initialize the inter-relation aggregator.
         Generalized to support N relations (not hardcoded to 3).
+        Optionally supports CAPN mode with per-node adaptive thresholds.
         :param features: the input node features or embeddings for all nodes
         :param feature_dim: the input dimension
         :param embed_dim: the output dimension
@@ -40,6 +43,10 @@ class InterAgg(nn.Module):
         :param threshold_max: maximum threshold value
         :param rl_patience: number of epochs without improvement before RL stops
         :param rl_epsilon: minimum change in scores to be considered an improvement
+        :param policy_network: optional CAPN PolicyNetwork for per-node thresholds
+        :param state_constructor: optional CAPN StateConstructor
+        :param enhanced_label_clf: optional CAPN EnhancedLabelPredictor
+        :param multi_view_distance: optional CAPN MultiViewDistance
         """
         super(InterAgg, self).__init__()
 
@@ -58,17 +65,23 @@ class InterAgg(nn.Module):
         self.rl_patience = rl_patience
         self.rl_epsilon = rl_epsilon
 
+        # CAPN components (None = use original CARE-GNN behavior)
+        self.policy_network = policy_network
+        self.state_constructor = state_constructor
+        self.multi_view_distance = multi_view_distance
+        self.use_capn = policy_network is not None
+
         # set device on all intra-aggregators
         for agg in self.intra_aggs:
             agg.device = self.device
 
-        # RL condition flag
+        # RL condition flag (only used in non-CAPN mode)
         self.RL = True
 
         # number of batches for current epoch, assigned during training
         self.batch_num = 0
 
-        # initial filtering thresholds
+        # initial filtering thresholds (used in non-CAPN mode)
         if initial_thresholds is not None:
             self.thresholds = list(initial_thresholds)
         else:
@@ -90,12 +103,21 @@ class InterAgg(nn.Module):
         init.xavier_uniform_(self.a)
 
         # label predictor for similarity measure
-        self.label_clf = nn.Linear(self.feat_dim, 2)
+        # use enhanced version if provided (CAPN mode), otherwise default linear
+        if enhanced_label_clf is not None:
+            self.label_clf = enhanced_label_clf
+        else:
+            self.label_clf = nn.Linear(self.feat_dim, 2)
 
         # initialize the parameter logs
         self.weights_log = []
         self.thresholds_log = [list(self.thresholds)]
         self.relation_score_log = []
+
+        # CAPN: store per-batch policy outputs for loss computation
+        self._capn_log_probs = []
+        self._capn_thresholds = []
+        self._capn_avg_dists = []
 
     def forward(self, nodes, labels, train_flag=True):
         """
@@ -129,12 +151,48 @@ class InterAgg(nn.Module):
         r_lists = []
         r_scores = []
         r_sample_num_lists = []
-        for r_idx in range(self.num_relations):
-            r_list = [list(to_neigh) for to_neigh in to_neighs[r_idx]]
-            r_lists.append(r_list)
-            r_score = [batch_scores[itemgetter(*to_neigh)(id_mapping), :].view(-1, 2) for to_neigh in r_list]
-            r_scores.append(r_score)
-            r_sample_num_lists.append([math.ceil(len(neighs) * self.thresholds[r_idx]) for neighs in r_list])
+
+        if self.use_capn:
+            # CAPN mode: compute per-node thresholds via policy network
+            batch_log_probs = []
+            batch_thresholds = []
+            self.policy_network.reset_episode()
+
+            for r_idx in range(self.num_relations):
+                r_list = [list(to_neigh) for to_neigh in to_neighs[r_idx]]
+                r_lists.append(r_list)
+                r_score = [batch_scores[itemgetter(*to_neigh)(id_mapping), :].view(-1, 2) for to_neigh in r_list]
+                r_scores.append(r_score)
+
+                # compute state vectors for policy network
+                state = self.state_constructor.compute_state(
+                    nodes, r_idx, center_scores, r_score, r_list)
+
+                # get per-node thresholds from policy
+                deterministic = not train_flag
+                node_thresholds, log_probs = self.policy_network(state, r_idx, deterministic)
+                batch_log_probs.append(log_probs)
+                batch_thresholds.append(node_thresholds)
+
+                # store for policy gradient
+                self.policy_network.store_action(log_probs, node_thresholds)
+
+                # compute per-node sample counts using per-node thresholds
+                sample_nums = [max(1, math.ceil(len(neighs) * node_thresholds[i].item()))
+                               for i, neighs in enumerate(r_list)]
+                r_sample_num_lists.append(sample_nums)
+
+            # store for reward computation
+            self._capn_log_probs = batch_log_probs
+            self._capn_thresholds = batch_thresholds
+        else:
+            # Original CARE-GNN mode: global thresholds per relation
+            for r_idx in range(self.num_relations):
+                r_list = [list(to_neigh) for to_neigh in to_neighs[r_idx]]
+                r_lists.append(r_list)
+                r_score = [batch_scores[itemgetter(*to_neigh)(id_mapping), :].view(-1, 2) for to_neigh in r_list]
+                r_scores.append(r_score)
+                r_sample_num_lists.append([math.ceil(len(neighs) * self.thresholds[r_idx]) for neighs in r_list])
 
         # intra-aggregation steps for each relation (Eq. 8)
         r_feats_list = []
@@ -144,6 +202,20 @@ class InterAgg(nn.Module):
                 nodes, r_lists[r_idx], center_scores, r_scores[r_idx], r_sample_num_lists[r_idx])
             r_feats_list.append(r_feats)
             r_scores_out.append(r_samp_scores)
+
+        # compute average distance for CAPN reward
+        if self.use_capn:
+            total_dist = 0.0
+            total_count = 0
+            for scores_list in r_scores_out:
+                for s in scores_list:
+                    if isinstance(s, list):
+                        total_dist += sum(s)
+                        total_count += len(s)
+                    elif isinstance(s, float):
+                        total_dist += s
+                        total_count += 1
+            self._capn_avg_dists.append(total_dist / max(total_count, 1))
 
         # concat the intra-aggregated embeddings from each relation
         neigh_feats = torch.cat(r_feats_list, dim=0)
@@ -155,7 +227,13 @@ class InterAgg(nn.Module):
         n = len(nodes)
 
         # inter-relation aggregation steps (Eq. 9)
-        if self.inter == 'Att':
+        if self.use_capn and self.inter == 'GNN':
+            # CAPN mode: use mean of per-node thresholds as inter-agg weights
+            mean_thresholds = [t.mean().item() for t in self._capn_thresholds]
+            combined = threshold_inter_agg(
+                self.num_relations, self_feats, neigh_feats, self.embed_dim,
+                self.weight, mean_thresholds, n, self.device)
+        elif self.inter == 'Att':
             combined, attention = att_inter_agg(
                 self.num_relations, self.leakyrelu, self_feats, neigh_feats,
                 self.embed_dim, self.weight, self.a, n, self.dropout, self.training, self.device)
@@ -175,8 +253,8 @@ class InterAgg(nn.Module):
                 self.num_relations, self_feats, neigh_feats, self.embed_dim,
                 self.weight, self.thresholds, n, self.device)
 
-        # the reinforcement learning module
-        if self.RL and train_flag:
+        # the reinforcement learning module (only in non-CAPN mode)
+        if not self.use_capn and self.RL and train_flag:
             relation_scores, rewards, thresholds, stop_flag = RLModule(
                 r_scores_out, self.relation_score_log, labels, self.thresholds,
                 self.batch_num, self.step_size, self.threshold_min, self.threshold_max,
@@ -187,6 +265,29 @@ class InterAgg(nn.Module):
             self.thresholds_log.append(list(self.thresholds))
 
         return combined, center_scores
+
+    def get_capn_policy_loss(self, reward):
+        """
+        Get the CAPN policy gradient loss for the current batch.
+        Called by CAPNOneLayerCARE.loss() after computing shaped reward.
+        :param reward: scalar reward from ShapedRewardComputer
+        :return: policy gradient loss tensor
+        """
+        if not self.use_capn or self.policy_network is None:
+            return torch.tensor(0.0, device=self.device)
+        return self.policy_network.get_policy_loss(reward)
+
+    def get_capn_avg_dist(self):
+        """Get the latest average distance for reward computation."""
+        if self._capn_avg_dists:
+            return self._capn_avg_dists[-1]
+        return 0.0
+
+    def get_capn_thresholds(self):
+        """Get the latest per-node thresholds for logging."""
+        if self._capn_thresholds:
+            return [t.detach() for t in self._capn_thresholds]
+        return []
 
 
 class IntraAgg(nn.Module):

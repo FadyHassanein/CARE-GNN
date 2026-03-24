@@ -12,9 +12,11 @@ from sklearn.model_selection import train_test_split
 from utils import (load_data, normalize, pos_neg_split, undersample,
                    test_sage, test_care, seed_everything, get_device,
                    save_checkpoint, EarlyStopping)
-from model import OneLayerCARE, MultiLayerCARE
+from model import OneLayerCARE, MultiLayerCARE, CAPNOneLayerCARE
 from layers import InterAgg, IntraAgg
 from graphsage import GraphSage, MeanAggregator, Encoder
+from capn import (EnhancedLabelPredictor, StateConstructor, PolicyNetwork,
+                  ShapedRewardComputer, LLMPriorLoader, MultiViewDistance)
 from config import CareConfig
 
 """
@@ -103,6 +105,17 @@ def parse_args():
     parser.add_argument('--rl-patience', type=int, default=5, help='RL convergence patience.')
     parser.add_argument('--rl-epsilon', type=float, default=1e-4, help='RL convergence epsilon.')
 
+    # CAPN: Camouflage-Aware Policy Network
+    parser.add_argument('--use-capn', action='store_true', default=False, help='Use CAPN policy network for adaptive thresholds.')
+    parser.add_argument('--policy-lr', type=float, default=1e-3, help='Policy network learning rate.')
+    parser.add_argument('--policy-hidden', type=int, default=64, help='Policy network hidden dimension.')
+    parser.add_argument('--lambda-policy', type=float, default=0.1, help='Weight for policy gradient loss.')
+    parser.add_argument('--reward-w1', type=float, default=0.5, help='Shaped reward: distance improvement weight.')
+    parser.add_argument('--reward-w2', type=float, default=0.3, help='Shaped reward: accuracy signal weight.')
+    parser.add_argument('--reward-w3', type=float, default=0.2, help='Shaped reward: regularization weight.')
+    parser.add_argument('--gamma-init', type=float, default=0.7, help='Initial gamma for multi-view distance.')
+    parser.add_argument('--llm-priors-file', type=str, default='', help='Path to LLM-generated priors JSON file.')
+
     return parser.parse_args()
 
 
@@ -178,13 +191,56 @@ def train(args):
 
     logger.info(f'Model: {args.model}, Inter-AGG: {args.inter}, emb_size: {args.emb_size}')
 
+    # CAPN components (initialized if --use-capn is set)
+    policy_network = None
+    state_constructor = None
+    enhanced_label_clf = None
+    multi_view_distance = None
+    reward_computer = None
+
+    if args.use_capn and args.model in ('CARE',):
+        # load LLM priors if available
+        llm_loader = LLMPriorLoader(args.llm_priors_file if args.llm_priors_file else None)
+        relation_biases = llm_loader.get_relation_biases()
+        gamma_inits = llm_loader.get_gamma_init()
+
+        # enhanced label predictor
+        enhanced_label_clf = EnhancedLabelPredictor(feat_data.shape[1]).to(device)
+
+        # state constructor
+        state_constructor = StateConstructor(adj_lists, homo, features, device=device)
+
+        # policy network
+        state_dim = feat_data.shape[1] + 5
+        policy_network = PolicyNetwork(
+            state_dim, hidden_dim=args.policy_hidden,
+            num_relations=len(adj_lists),
+            relation_biases=relation_biases).to(device)
+
+        # multi-view distance
+        gamma_init = gamma_inits if gamma_inits else args.gamma_init
+        multi_view_distance = MultiViewDistance(len(adj_lists), gamma_init=gamma_init, adj_lists=adj_lists)
+
+        # shaped reward computer
+        reward_computer = ShapedRewardComputer(w1=args.reward_w1, w2=args.reward_w2, w3=args.reward_w3)
+
+        logger.info(f'CAPN mode enabled: policy_hidden={args.policy_hidden}, policy_lr={args.policy_lr}, '
+                    f'lambda_policy={args.lambda_policy}')
+
     # build models
     if args.model == 'CARE':
         intra_aggs = [IntraAgg(features, feat_data.shape[1], device=device) for _ in range(len(adj_lists))]
         inter1 = InterAgg(features, feat_data.shape[1], args.emb_size, adj_lists, intra_aggs,
                           inter=args.inter, step_size=args.step_size, device=device,
-                          dropout=args.dropout, rl_patience=args.rl_patience, rl_epsilon=args.rl_epsilon)
-        gnn_model = OneLayerCARE(2, inter1, args.lambda_1, loss_fn=loss_fn)
+                          dropout=args.dropout, rl_patience=args.rl_patience, rl_epsilon=args.rl_epsilon,
+                          policy_network=policy_network, state_constructor=state_constructor,
+                          enhanced_label_clf=enhanced_label_clf, multi_view_distance=multi_view_distance)
+        if args.use_capn:
+            gnn_model = CAPNOneLayerCARE(2, inter1, args.lambda_1,
+                                          lambda_policy=args.lambda_policy,
+                                          reward_computer=reward_computer, loss_fn=loss_fn)
+        else:
+            gnn_model = OneLayerCARE(2, inter1, args.lambda_1, loss_fn=loss_fn)
 
     elif args.model == 'MULTI_CARE':
         inter_layers = []
@@ -205,9 +261,21 @@ def train(args):
 
     gnn_model = gnn_model.to(device)
 
-    optimizer = torch.optim.Adam(
-        filter(lambda p: p.requires_grad, gnn_model.parameters()),
-        lr=args.lr, weight_decay=args.lambda_2)
+    # set up optimizers
+    if args.use_capn and policy_network is not None:
+        # dual optimizer: separate LR for policy network
+        gnn_params = [p for n, p in gnn_model.named_parameters()
+                      if p.requires_grad and 'policy_network' not in n]
+        policy_params = list(policy_network.parameters())
+        optimizer = torch.optim.Adam(gnn_params, lr=args.lr, weight_decay=args.lambda_2)
+        policy_optimizer = torch.optim.Adam(policy_params, lr=args.policy_lr)
+        logger.info(f'Dual optimizer: GNN params={sum(p.numel() for p in gnn_params)}, '
+                    f'Policy params={sum(p.numel() for p in policy_params)}')
+    else:
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, gnn_model.parameters()),
+            lr=args.lr, weight_decay=args.lambda_2)
+        policy_optimizer = None
 
     # learning rate scheduler
     scheduler = None
@@ -235,7 +303,7 @@ def train(args):
         if args.model in ('CARE', 'MULTI_CARE'):
             if args.model == 'CARE':
                 gnn_model.inter1.batch_num = num_batches
-            else:
+            elif args.model == 'MULTI_CARE':
                 for inter in gnn_model.inter_layers:
                     inter.batch_num = num_batches
 
@@ -250,6 +318,8 @@ def train(args):
             batch_nodes = sampled_idx_train[i_start:i_end]
             batch_label = labels[np.array(batch_nodes)]
             optimizer.zero_grad()
+            if policy_optimizer is not None:
+                policy_optimizer.zero_grad()
             loss = gnn_model.loss(batch_nodes, torch.LongTensor(batch_label).to(device))
             loss.backward()
 
@@ -257,6 +327,8 @@ def train(args):
             torch.nn.utils.clip_grad_norm_(gnn_model.parameters(), args.grad_clip)
 
             optimizer.step()
+            if policy_optimizer is not None:
+                policy_optimizer.step()
             end_time = time.time()
             epoch_time += end_time - start_time
             epoch_loss += loss.item()
