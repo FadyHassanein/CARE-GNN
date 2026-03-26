@@ -122,11 +122,14 @@ class StateConstructor:
         node_features = self.features(torch.LongTensor(nodes).to(self.device))
 
         # confidence from label predictor (requires EnhancedLabelPredictor)
-        probs = F.softmax(label_scores, dim=1)
-        log_probs = F.log_softmax(label_scores, dim=1)
+        # clamp scores to prevent extreme softmax values that cause 0 * -inf = NaN
+        clamped_scores = label_scores.detach().clamp(-20, 20)
+        probs = F.softmax(clamped_scores, dim=1)
+        log_probs = F.log_softmax(clamped_scores, dim=1)
         entropy = -(probs * log_probs).sum(dim=1, keepdim=True)
         max_entropy = math.log(label_scores.size(1))
         confidence = 1.0 - entropy / max_entropy  # [batch, 1]
+        confidence = confidence.clamp(0.0, 1.0)  # ensure valid range
 
         # per-node structural statistics
         degrees = torch.zeros(batch_size, 1, device=self.device)
@@ -144,9 +147,10 @@ class StateConstructor:
             # mean L1 distance to neighbors
             if num_neighs > 0 and i < len(neigh_scores_list):
                 neigh_score = neigh_scores_list[i]
-                center_score = label_scores[i][0].expand(neigh_score.size(0))
-                dists = torch.abs(center_score - neigh_score[:, 0])
-                mean_dists[i] = dists.mean()
+                center_score = label_scores[i][0].detach().expand(neigh_score.size(0))
+                dists = torch.abs(center_score - neigh_score[:, 0].detach())
+                dist_mean = dists.mean()
+                mean_dists[i] = dist_mean if not torch.isnan(dist_mean) else 0.0
 
             # Jaccard overlap with homogeneous graph
             node_int = int(node)
@@ -171,6 +175,9 @@ class StateConstructor:
             overlaps,          # [batch, 1]
             feat_vars,         # [batch, 1]
         ], dim=1)
+
+        # replace any remaining NaN with 0 to prevent downstream crashes
+        state = torch.nan_to_num(state, nan=0.0)
 
         return state
 
@@ -238,6 +245,12 @@ class PolicyNetwork(nn.Module):
         # softplus to ensure positive alpha, beta (add small constant for stability)
         alpha = F.softplus(params[:, 0]) + 0.5
         beta = F.softplus(params[:, 1]) + 0.5
+
+        # guard against NaN from upstream — replace with safe default (uniform Beta(1,1))
+        alpha = torch.where(torch.isnan(alpha) | torch.isinf(alpha),
+                            torch.ones_like(alpha), alpha)
+        beta = torch.where(torch.isnan(beta) | torch.isinf(beta),
+                           torch.ones_like(beta), beta)
 
         dist = Beta(alpha, beta)
 
