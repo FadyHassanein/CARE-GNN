@@ -161,8 +161,8 @@ class StateConstructor:
                 union = len(rel_neighs | homo_neighs)
                 overlaps[i] = intersection / max(union, 1)
 
-            # mean feature variance of neighbors
-            if num_neighs > 0:
+            # mean feature variance of neighbors (need >= 2 for meaningful variance)
+            if num_neighs > 1:
                 neigh_feats = self.features(torch.LongTensor(neighs).to(self.device))
                 feat_vars[i] = neigh_feats.var(dim=0).mean()
 
