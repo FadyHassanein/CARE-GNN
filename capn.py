@@ -252,16 +252,26 @@ class PolicyNetwork(nn.Module):
         beta = torch.where(torch.isnan(beta) | torch.isinf(beta),
                            torch.ones_like(beta), beta)
 
-        dist = Beta(alpha, beta)
+        # Move Beta distribution ops to CPU to avoid CUDA JIT compilation of
+        # lgamma kernel (requires NVRTC builtins which may not be available).
+        # The tensors are small (batch_size x 1) so CPU overhead is negligible.
+        orig_device = alpha.device
+        alpha_cpu = alpha.detach().cpu()
+        beta_cpu = beta.detach().cpu()
+        dist = Beta(alpha_cpu, beta_cpu)
 
         if deterministic or not self.training:
-            thresholds = alpha / (alpha + beta)  # mean of Beta
-            log_probs = dist.log_prob(thresholds.clamp(1e-6, 1 - 1e-6))
+            thresholds = alpha / (alpha + beta)  # mean of Beta (stays on original device)
+            thresholds_cpu = thresholds.detach().cpu().clamp(1e-6, 1 - 1e-6)
+            log_probs = dist.log_prob(thresholds_cpu).to(orig_device)
         else:
-            # sample with reparameterization
-            thresholds = dist.rsample()
-            thresholds = thresholds.clamp(1e-3, 0.999)
-            log_probs = dist.log_prob(thresholds)
+            # sample on CPU, then move back
+            thresholds_cpu = dist.rsample().clamp(1e-3, 0.999)
+            log_probs = dist.log_prob(thresholds_cpu).to(orig_device)
+            # rebuild thresholds on original device with grad via straight-through
+            thresholds = alpha / (alpha + beta)  # differentiable mean as proxy
+            # adjust to match sampled values (straight-through estimator)
+            thresholds = thresholds + (thresholds_cpu.to(orig_device) - thresholds).detach()
 
         return thresholds, log_probs
 
