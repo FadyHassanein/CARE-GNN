@@ -4,4 +4,6 @@
 *.iml
 .idea/dictionaries
 *.mat
+*.pickle
 backup.py
+__pycache__/
