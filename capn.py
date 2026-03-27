@@ -161,8 +161,8 @@ class StateConstructor:
                 union = len(rel_neighs | homo_neighs)
                 overlaps[i] = intersection / max(union, 1)
 
-            # mean feature variance of neighbors
-            if num_neighs > 0:
+            # mean feature variance of neighbors (need >= 2 for meaningful variance)
+            if num_neighs > 1:
                 neigh_feats = self.features(torch.LongTensor(neighs).to(self.device))
                 feat_vars[i] = neigh_feats.var(dim=0).mean()
 
@@ -180,6 +180,43 @@ class StateConstructor:
         state = torch.nan_to_num(state, nan=0.0)
 
         return state
+
+
+class SafeLgamma(torch.autograd.Function):
+    """lgamma computed on CPU to avoid CUDA NVRTC JIT compilation errors.
+
+    Forward: lgamma(x) on CPU
+    Backward: digamma(x) on CPU (since d/dx lgamma(x) = digamma(x))
+    Results are placed back on the original device for seamless GPU integration.
+    """
+
+    @staticmethod
+    def forward(ctx, x):
+        x_cpu = x.detach().cpu()
+        result = torch.lgamma(x_cpu)
+        ctx.save_for_backward(x_cpu)
+        ctx.orig_device = x.device
+        return result.to(x.device)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        x_cpu, = ctx.saved_tensors
+        return grad_output * torch.digamma(x_cpu).to(ctx.orig_device)
+
+
+def _beta_log_prob(alpha, beta, t):
+    """Manual Beta log_prob with gradients through alpha/beta via SafeLgamma.
+
+    log p(t | α, β) = (α-1)·log(t) + (β-1)·log(1-t) - lgamma(α) - lgamma(β) + lgamma(α+β)
+
+    :param alpha: Beta distribution alpha parameter (has grad)
+    :param beta: Beta distribution beta parameter (has grad)
+    :param t: sampled threshold values (detached, no grad needed for REINFORCE)
+    :return: log probability with gradients flowing through alpha and beta
+    """
+    safe_lgamma = SafeLgamma.apply
+    log_norm = safe_lgamma(alpha) + safe_lgamma(beta) - safe_lgamma(alpha + beta)
+    return (alpha - 1) * torch.log(t) + (beta - 1) * torch.log(1 - t) - log_norm
 
 
 class PolicyNetwork(nn.Module):
@@ -252,16 +289,22 @@ class PolicyNetwork(nn.Module):
         beta = torch.where(torch.isnan(beta) | torch.isinf(beta),
                            torch.ones_like(beta), beta)
 
-        dist = Beta(alpha, beta)
-
         if deterministic or not self.training:
             thresholds = alpha / (alpha + beta)  # mean of Beta
-            log_probs = dist.log_prob(thresholds.clamp(1e-6, 1 - 1e-6))
+            t_clamped = thresholds.detach().clamp(1e-6, 1 - 1e-6)
+            log_probs = _beta_log_prob(alpha, beta, t_clamped)
         else:
-            # sample with reparameterization
-            thresholds = dist.rsample()
-            thresholds = thresholds.clamp(1e-3, 0.999)
-            log_probs = dist.log_prob(thresholds)
+            # sample on CPU (REINFORCE doesn't need grad through samples)
+            with torch.no_grad():
+                dist = Beta(alpha.detach().cpu(), beta.detach().cpu())
+                t_sampled = dist.rsample().clamp(1e-3, 0.999).to(alpha.device)
+
+            # log_prob via SafeLgamma — gradients flow through alpha/beta
+            log_probs = _beta_log_prob(alpha, beta, t_sampled)
+
+            # straight-through estimator for thresholds
+            thresholds = alpha / (alpha + beta)
+            thresholds = thresholds + (t_sampled - thresholds).detach()
 
         return thresholds, log_probs
 
