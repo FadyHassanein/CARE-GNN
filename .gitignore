@@ -6,3 +6,4 @@
 *.mat
 *.pickle
 backup.py
+__pycache__/
