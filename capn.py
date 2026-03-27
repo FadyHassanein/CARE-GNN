@@ -182,6 +182,43 @@ class StateConstructor:
         return state
 
 
+class SafeLgamma(torch.autograd.Function):
+    """lgamma computed on CPU to avoid CUDA NVRTC JIT compilation errors.
+
+    Forward: lgamma(x) on CPU
+    Backward: digamma(x) on CPU (since d/dx lgamma(x) = digamma(x))
+    Results are placed back on the original device for seamless GPU integration.
+    """
+
+    @staticmethod
+    def forward(ctx, x):
+        x_cpu = x.detach().cpu()
+        result = torch.lgamma(x_cpu)
+        ctx.save_for_backward(x_cpu)
+        ctx.orig_device = x.device
+        return result.to(x.device)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        x_cpu, = ctx.saved_tensors
+        return grad_output * torch.digamma(x_cpu).to(ctx.orig_device)
+
+
+def _beta_log_prob(alpha, beta, t):
+    """Manual Beta log_prob with gradients through alpha/beta via SafeLgamma.
+
+    log p(t | α, β) = (α-1)·log(t) + (β-1)·log(1-t) - lgamma(α) - lgamma(β) + lgamma(α+β)
+
+    :param alpha: Beta distribution alpha parameter (has grad)
+    :param beta: Beta distribution beta parameter (has grad)
+    :param t: sampled threshold values (detached, no grad needed for REINFORCE)
+    :return: log probability with gradients flowing through alpha and beta
+    """
+    safe_lgamma = SafeLgamma.apply
+    log_norm = safe_lgamma(alpha) + safe_lgamma(beta) - safe_lgamma(alpha + beta)
+    return (alpha - 1) * torch.log(t) + (beta - 1) * torch.log(1 - t) - log_norm
+
+
 class PolicyNetwork(nn.Module):
     """
     Policy network that outputs per-node, per-relation filtering thresholds.
@@ -252,26 +289,22 @@ class PolicyNetwork(nn.Module):
         beta = torch.where(torch.isnan(beta) | torch.isinf(beta),
                            torch.ones_like(beta), beta)
 
-        # Move Beta distribution ops to CPU to avoid CUDA JIT compilation of
-        # lgamma kernel (requires NVRTC builtins which may not be available).
-        # The tensors are small (batch_size x 1) so CPU overhead is negligible.
-        orig_device = alpha.device
-        alpha_cpu = alpha.detach().cpu()
-        beta_cpu = beta.detach().cpu()
-        dist = Beta(alpha_cpu, beta_cpu)
-
         if deterministic or not self.training:
-            thresholds = alpha / (alpha + beta)  # mean of Beta (stays on original device)
-            thresholds_cpu = thresholds.detach().cpu().clamp(1e-6, 1 - 1e-6)
-            log_probs = dist.log_prob(thresholds_cpu).to(orig_device)
+            thresholds = alpha / (alpha + beta)  # mean of Beta
+            t_clamped = thresholds.detach().clamp(1e-6, 1 - 1e-6)
+            log_probs = _beta_log_prob(alpha, beta, t_clamped)
         else:
-            # sample on CPU, then move back
-            thresholds_cpu = dist.rsample().clamp(1e-3, 0.999)
-            log_probs = dist.log_prob(thresholds_cpu).to(orig_device)
-            # rebuild thresholds on original device with grad via straight-through
-            thresholds = alpha / (alpha + beta)  # differentiable mean as proxy
-            # adjust to match sampled values (straight-through estimator)
-            thresholds = thresholds + (thresholds_cpu.to(orig_device) - thresholds).detach()
+            # sample on CPU (REINFORCE doesn't need grad through samples)
+            with torch.no_grad():
+                dist = Beta(alpha.detach().cpu(), beta.detach().cpu())
+                t_sampled = dist.rsample().clamp(1e-3, 0.999).to(alpha.device)
+
+            # log_prob via SafeLgamma — gradients flow through alpha/beta
+            log_probs = _beta_log_prob(alpha, beta, t_sampled)
+
+            # straight-through estimator for thresholds
+            thresholds = alpha / (alpha + beta)
+            thresholds = thresholds + (t_sampled - thresholds).detach()
 
         return thresholds, log_probs
 
