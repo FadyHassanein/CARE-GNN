@@ -40,13 +40,13 @@ def get_device(device_str='auto'):
 
 def load_data(data, prefix='data/'):
     """
-    Load graph, feature, and label given dataset name
+    Load graph, feature, and label given dataset name.
+    Uses cached .npy files for labels/features if available, falling back to .mat.
     :returns: home and single-relation graphs, feature, label
     """
     if data == 'yelp':
-        data_file = loadmat(prefix + 'YelpChi.mat')
-        labels = data_file['label'].flatten()
-        feat_data = data_file['features'].todense().A
+        labels, feat_data = _load_labels_features(
+            prefix, 'YelpChi.mat', 'yelp_labels.npy', 'yelp_features.npy')
         with open(prefix + 'yelp_homo_adjlists.pickle', 'rb') as file:
             homo = pickle.load(file)
         with open(prefix + 'yelp_rur_adjlists.pickle', 'rb') as file:
@@ -56,9 +56,8 @@ def load_data(data, prefix='data/'):
         with open(prefix + 'yelp_rsr_adjlists.pickle', 'rb') as file:
             relation3 = pickle.load(file)
     elif data == 'amazon':
-        data_file = loadmat(prefix + 'Amazon.mat')
-        labels = data_file['label'].flatten()
-        feat_data = data_file['features'].todense().A
+        labels, feat_data = _load_labels_features(
+            prefix, 'Amazon.mat', 'amz_labels.npy', 'amz_features.npy')
         with open(prefix + 'amz_homo_adjlists.pickle', 'rb') as file:
             homo = pickle.load(file)
         with open(prefix + 'amz_upu_adjlists.pickle', 'rb') as file:
@@ -72,6 +71,35 @@ def load_data(data, prefix='data/'):
 
     logger.info(f'Loaded {data} dataset: {len(labels)} nodes, {feat_data.shape[1]} features')
     return [homo, relation1, relation2, relation3], feat_data, labels
+
+
+def _load_labels_features(prefix, mat_file, labels_cache, features_cache):
+    """
+    Load labels and features from cached .npy files, falling back to .mat.
+    Caches to .npy on first load so .mat is not needed on subsequent runs.
+    """
+    labels_path = prefix + labels_cache
+    features_path = prefix + features_cache
+
+    if os.path.exists(labels_path) and os.path.exists(features_path):
+        logger.info(f'Loading cached labels/features from {labels_cache}, {features_cache}')
+        labels = np.load(labels_path)
+        feat_data = np.load(features_path)
+    else:
+        mat_path = prefix + mat_file
+        if not os.path.exists(mat_path):
+            raise FileNotFoundError(
+                f'{mat_path} not found. Either provide the .mat file or run once locally '
+                f'to generate cached .npy files ({labels_cache}, {features_cache})')
+        logger.info(f'Loading from {mat_file} and caching to .npy')
+        data_file = loadmat(mat_path)
+        labels = data_file['label'].flatten()
+        feat_data = data_file['features'].todense().A
+        np.save(labels_path, labels)
+        np.save(features_path, feat_data)
+        logger.info(f'Cached labels to {labels_cache} and features to {features_cache}')
+
+    return labels, feat_data
 
 
 def normalize(mx):
