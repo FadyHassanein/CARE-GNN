@@ -1,0 +1,432 @@
+\chapter{Methodology}
+\lhead{\emph{Chapter3}}
+
+In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on the Amazon fraud dataset. We first describe the dataset and the preprocessing steps required to construct the multi-relational graphs, then discuss the three architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. Finally, we detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours.
+
+\section{Dataset Description}
+
+The experiments in this study are based on the Amazon fraud dataset, which models
+user behaviour and relational interactions within an online review ecosystem. The dataset
+contains a total of \textbf{11,944} users, each represented as a node with \textbf{25} numerical
+features describing behavioural or profile-based attributes. Every user is labelled as either
+normal (0) or suspicious (1), with \textbf{11,123} normal users and \textbf{821} suspicious users,
+indicating a substantial class imbalance characteristic of fraud detection tasks.
+
+In addition to node-level attributes, the dataset provides three distinct relational graphs
+defined over the same set of users:
+
+\begin{itemize}
+    \item \textbf{UPU} (User--Product--User): connects users who reviewed the same products.
+    \begin{itemize}
+        \item Edges: 175{,}608
+        \item Average degree: 29.4
+        \item Connected components: 2{,}051
+        \item Largest component: 9{,}314 nodes
+    \end{itemize}
+
+    \item \textbf{USU} (User--Seller--User): connects users who assigned the same star rating
+    to the same seller within one week.
+    \begin{itemize}
+        \item Edges: 3{,}566{,}479
+        \item Average degree: 597.2
+        \item Connected components: 91
+        \item Largest component: 11{,}854 nodes
+    \end{itemize}
+
+    \item \textbf{UVU} (User--View--User): connects users whose review texts are highly similar
+    (top-5\% TF-IDF cosine similarity).
+    \begin{itemize}
+        \item Edges: 1{,}036{,}737
+        \item Average degree: 173.6
+        \item Connected components: 106
+        \item Largest component: 11{,}795 nodes
+    \end{itemize}
+\end{itemize}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lrrrrr}
+\hline
+Relation & Nodes & Edges & Avg.\ Degree & Components & Largest Comp. \\
+\hline
+UPU & 11{,}944 & 175{,}608 & 29.4  & 2{,}051 & 9{,}314 \\
+USU & 11{,}944 & 3{,}566{,}479 & 597.2 & 91    & 11{,}854 \\
+UVU & 11{,}944 & 1{,}036{,}737 & 173.6 & 106   & 11{,}795 \\
+\hline
+\end{tabular}
+\caption{Summary statistics for each relational graph in the Amazon fraud dataset.}
+\end{table}
+
+These statistics highlight substantial variation in structural density across the three
+relations: UPU is the sparsest graph, USU is extremely dense, and UVU occupies an
+intermediate level of connectivity. Each relation therefore captures a distinct behavioural
+dimension and provides complementary information for multi-relational graph learning.
+
+
+\section{Data Processing}
+\vspace{1\baselineskip}
+
+Data preprocessing plays a critical role in ensuring stable and high-performing Graph Neural Network models. Because the Amazon dataset carries a complex relational structure with heterogeneous edge types (UPU, USU, UVU), several transformations are applied both to the feature space and to the graph structure prior to training. The preprocessing serves three purposes: (i)~making node features comparable across dimensions, (ii)~normalising the graph for numerically stable aggregation, and (iii)~adapting the adjacency matrices to each GNN's aggregation mechanism.
+
+\subsection{Feature Standardisation}
+Standardisation prevents domination by high-magnitude features and stabilises gradient flow during message passing. The features were z-score normalised using training-set statistics only to avoid data leakage. Let \( X \in \mathbb{R}^{N \times D} \) denote the feature matrix, where \( N \) is the number of nodes and \( D \) is the number of features. For each feature dimension \( d \), the training mean \( \mu_d \) and standard deviation \( \sigma_d \) were computed, and normalisation was applied as:
+
+\begin{equation}
+X'_{id} = \frac{X_{id} - \mu_d}{\sigma_d + \epsilon}
+\end{equation}
+
+where \( \epsilon \) is a small constant to prevent division by zero. This ensures that all features have zero mean and unit variance, improving gradient flow during training.
+
+\subsection{Graph Construction}
+Three relational graphs are provided in the dataset:
+
+\begin{itemize}
+    \item \( \mathcal{G}_{\text{upu}} \): User--Product--User relation
+    \item \( \mathcal{G}_{\text{usu}} \): User--Seller--User relation
+    \item \( \mathcal{G}_{\text{uvu}} \): User--View--User relation
+\end{itemize}
+
+Each was stored as adjacency lists and converted to symmetric undirected adjacency matrices in compressed sparse row (CSR) format. Self-loops were explicitly removed to ensure meaningful neighbourhood aggregation.
+
+\subsection{Graph Normalisation for GCN}
+For the relation-aware GCN model, a top-\(p\) neighbour filtering strategy was applied to retain only the most informative neighbours for each node. Specifically, for each node \( i \), the top \( p = 10\% \) of neighbouring nodes were selected according to the cosine similarity of their feature vectors:
+
+\begin{equation}
+\text{sim}(i,j) = \frac{X_i \cdot X_j}{\|X_i\| \, \|X_j\|}
+\end{equation}
+
+After filtering, the graph was symmetrised and normalised using the standard GCN normalisation:
+
+\begin{equation}
+\hat{A} = D^{-\frac{1}{2}} (A + I) D^{-\frac{1}{2}}
+\end{equation}
+
+where \( A \) is the adjacency matrix, \( I \) is the identity matrix, and \( D \) is the diagonal degree matrix. This normalisation ensures scale-invariant message passing and stabilises training.
+
+\subsection{Graph Normalisation for GraphSAGE}
+For the multi-relation GraphSAGE model, row-normalisation was applied instead of top-\(p\) filtering:
+
+\begin{equation}
+\tilde{A} = D^{-1} A
+\end{equation}
+
+where each row is normalised by the corresponding node degree. This is consistent with the mean aggregator mechanism of GraphSAGE, in which each node computes the average of its neighbours' embeddings.
+
+\subsection{CARE-GNN Internal Preprocessing}
+Unlike GCN and GraphSAGE, CARE-GNN does not require external graph normalisation or neighbour filtering. Instead, it operates directly on the raw adjacency lists and performs dynamic, label-aware neighbour selection internally during each forward pass (described in Section~\ref{sec:care-gnn}). Features are passed to the model as z-score normalised tensors without additional graph-level preprocessing.
+
+\subsection{Sparse Conversion}
+All normalised adjacency matrices (for GCN and GraphSAGE) were converted from SciPy CSR format to PyTorch sparse tensors to enable efficient GPU computation:
+
+\begin{equation}
+A_{\text{sparse}} = \texttt{torch.sparse\_coo\_tensor}(i, v, \text{size} = A.\text{shape})
+\end{equation}
+
+where \( i \) stores the indices of non-zero entries and \( v \) stores their values.
+
+\subsection{Train/Validation/Test Splits}
+Stratified sampling was used to split the dataset into 60\% training, 20\% validation, and 20\% test sets, maintaining label proportions across all splits. This ensured that the class distribution was preserved during training and evaluation.
+
+\subsection{Class Weighting}
+Due to the severe class imbalance, class weights were computed to increase the penalty for misclassifying the minority (fraudulent) class. If \( n_0 \) and \( n_1 \) denote the number of negative and positive samples respectively, the weight for the positive class was defined as:
+
+\begin{equation}
+w_{+} = \frac{n_0}{n_1}
+\end{equation}
+
+These weights were applied during loss computation to balance the training signal.
+
+\subsection{Model-Specific Preprocessing Summary}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Step} & \textbf{GCN} & \textbf{GraphSAGE} & \textbf{CARE-GNN} \\
+\hline
+Feature Standardisation & Z-score (train only) & Z-score (train only) & Z-score (train only) \\
+Neighbour Filtering & Top-10\% cosine sim. & None & Internal (RL-based) \\
+Graph Normalisation & \( D^{-\frac{1}{2}}(A+I)D^{-\frac{1}{2}} \) & \( D^{-1}A \) & None (raw adj.\ lists) \\
+Self-Loops & Added & Not added & Not added \\
+Class Weights & Applied & Applied & Under-sampling (1:1) \\
+Sparse Conversion & Yes & Yes & Not required \\
+\hline
+\end{tabular}
+\caption{Comparison of preprocessing steps across the three models.}
+\end{table}
+
+\noindent
+This structured preprocessing pipeline ensures that each model receives graph inputs best suited to its aggregation mechanism, improving both convergence stability and predictive performance.
+
+
+
+\section{Graph Neural Network Models}
+
+This section describes the three GNN architectures used in this work: the Relation-Aware Graph Convolutional Network (GCN), Multi-Relation GraphSAGE, and CARE-GNN. All three models are designed to exploit the multiple relational graphs (UPU, USU, UVU) simultaneously and therefore capture different types of user interactions. While the models share the same input data and output format, they differ fundamentally in how they aggregate neighbourhood information, handle multi-relational structure, and---in the case of CARE-GNN---resist camouflage behaviour by fraudsters.
+
+\subsection{Relation-Aware GCN}
+
+The first model is based on the classical Graph Convolutional Network (GCN) framework \cite{kipf2017semi}, extended to handle multiple relation types. Each relation has its own linear transformation layer, and the outputs are fused through learnable softmax weights. Node features are first transformed separately for each relation, aggregated through the corresponding normalised adjacency matrices, and then combined via weighted fusion. The fused representation is passed through dropout and a non-linearity, followed by a classification layer with sigmoid activation.
+
+For each node \( i \) and relation \( r \), the neighbourhood message is computed as:
+
+\begin{equation}
+H^{(1)}_r = \hat{A}_r X W_r
+\end{equation}
+
+where \( \hat{A}_r \) is the normalised adjacency matrix for relation \( r \), \( X \) is the input feature matrix, and \( W_r \) is the relation-specific weight matrix. All relation-specific outputs are fused through:
+
+\begin{equation}
+H^{(1)} = \sum_{r=1}^{R} \alpha_r H^{(1)}_r
+\end{equation}
+
+where \( \alpha_r \) are softmax-normalised learnable parameters:
+
+\begin{equation}
+\alpha_r = \frac{\exp(\theta_r)}{\sum_{k=1}^R \exp(\theta_k)}
+\end{equation}
+
+Finally, a linear classification layer is applied:
+
+\begin{equation}
+\hat{y} = \sigma \left( H^{(1)} W_{cls} \right)
+\end{equation}
+
+where \( W_{cls} \) is the classifier weight matrix and \( \sigma \) is the sigmoid activation function.
+
+\subsubsection{GCN Hyperparameters}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Hidden dimension (\( d_{hid} \)) & 64 \\
+Dropout rate & 0.5 \\
+Learning rate & \( 1 \times 10^{-2} \) \\
+Weight decay & \( 1 \times 10^{-3} \) \\
+Batch size & 256 \\
+Epochs & 30 \\
+Top-\(p\) neighbour filter & 0.10 \\
+Negative class weight & 1.5 \\
+Positive class weight & 1.0 \\
+Threshold (\( \tau \)) & 0.5 \\
+\hline
+\end{tabular}
+\caption{Hyperparameters for the Relation-Aware GCN model.}
+\end{table}
+
+\noindent
+This architecture effectively leverages different relational structures through learnable fusion, allowing the model to adaptively weight the contribution of each relation type during training.
+
+\subsection{Multi-Relation GraphSAGE}
+
+The second model is based on the GraphSAGE framework \cite{hamilton2017inductive}, adapted to handle multiple relations. Unlike GCN, GraphSAGE performs inductive learning through explicit neighbourhood sampling and aggregation. In this work, full neighbourhood aggregation with mean pooling is used, and the model aggregates messages across relations by averaging them.
+
+For each relation \( r \) and layer \( l \), the neighbourhood aggregation is defined as:
+
+\begin{equation}
+M^{(l)}_r = \hat{A}_r H^{(l)}
+\end{equation}
+
+where \( H^{(l)} \) represents the hidden node embeddings at layer \( l \) and \( \hat{A}_r \) is the row-normalised adjacency matrix for relation \( r \). The relation-specific messages are averaged:
+
+\begin{equation}
+M^{(l)} = \frac{1}{R} \sum_{r=1}^R M^{(l)}_r
+\end{equation}
+
+The node representations are then updated using a layer-wise linear transformation and non-linearity:
+
+\begin{equation}
+H^{(l+1)} = \sigma \left( W_{\text{self}}^{(l)} H^{(l)} + W_{\text{neigh}}^{(l)} M^{(l)} \right)
+\end{equation}
+
+where \( W_{\text{self}}^{(l)} \) and \( W_{\text{neigh}}^{(l)} \) are trainable weight matrices for self-node and neighbourhood messages respectively.
+
+The final classification output is computed as:
+
+\begin{equation}
+\hat{y} = \sigma \left( H^{(L)} W_{cls} \right)
+\end{equation}
+
+where \( L = 2 \) is the number of GraphSAGE layers used in this work.
+
+\subsubsection{GraphSAGE Hyperparameters}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Hidden dimension (\( d_{hid} \)) & 64 \\
+Output hidden dimension & 64 \\
+Dropout rate & 0.5 \\
+Learning rate & \( 1 \times 10^{-2} \) \\
+Weight decay & \( 1 \times 10^{-3} \) \\
+Batch size & 256 \\
+Epochs & 30 \\
+Aggregator & Mean \\
+Negative class weight & 1.5 \\
+Positive class weight & 1.0 \\
+Threshold (\( \tau \)) & 0.5 \\
+\hline
+\end{tabular}
+\caption{Hyperparameters for the Multi-Relation GraphSAGE model.}
+\end{table}
+
+\noindent
+GraphSAGE differs from GCN primarily in its use of row-normalised adjacency matrices, two-layer depth, and explicit mean aggregation, enabling better scalability and inductive capability.
+
+
+\subsection{CARE-GNN}
+\label{sec:care-gnn}
+
+The third and primary model is the CAmouflage-REsistant Graph Neural Network (CARE-GNN) \cite{dou2020enhancing}, specifically designed to address the camouflage problem in GNN-based fraud detection. Fraudsters employ two types of camouflage to evade detection: \textit{feature camouflage}, where they manipulate their attributes to resemble legitimate users, and \textit{relation camouflage}, where they deliberately establish connections with benign users to dilute suspiciousness signals during neighbourhood aggregation. Standard GNNs are vulnerable to both strategies, as they indiscriminately aggregate all neighbourhood information.
+
+CARE-GNN addresses these challenges through three integrated modules: (i)~a label-aware similarity measure that quantifies the informativeness of each neighbour, (ii)~a reinforcement learning (RL) module that adaptively determines the optimal filtering threshold, and (iii)~a multi-relation aggregation mechanism that combines filtered neighbourhood information across relations.
+
+\subsubsection{Label-Aware Similarity Measure}
+
+To identify informative neighbours and resist feature camouflage, CARE-GNN employs a label-aware similarity measure based on a trainable node-label predictor. A single-layer MLP serves as the label predictor, mapping each node's input features to a two-class output:
+
+\begin{equation}
+S(v) = \text{MLP}(h_v) \in \mathbb{R}^2
+\end{equation}
+
+The similarity between a centre node \( v \) and a neighbour \( v' \) is then measured via the L1 distance on the first component of the predictor output:
+
+\begin{equation}
+D(v, v') = |S(v)[0] - S(v')[0]|
+\end{equation}
+
+Neighbours with smaller distances are considered more likely to share the same label as the centre node and are therefore more informative for aggregation. For each relation \( r \), the neighbours of node \( v \) are ranked by distance and the top-\( p_r \) fraction with the smallest distances are retained for aggregation, where \( p_r \) is the filtering threshold for relation \( r \).
+
+\subsubsection{Intra-Relation Aggregation}
+
+After neighbour filtering, intra-relation aggregation computes a neighbourhood embedding for each relation independently. For each relation \( r \), the filtered neighbours' features are mean-aggregated:
+
+\begin{equation}
+h^{(r)}_{\mathcal{N}(v)} = \text{ReLU}\left( \frac{1}{|\mathcal{N}_r(v)|} \sum_{u \in \mathcal{N}_r(v)} h_u \right)
+\end{equation}
+
+where \( \mathcal{N}_r(v) \) denotes the set of selected neighbours of node \( v \) under relation \( r \).
+
+\subsubsection{Inter-Relation Aggregation}
+
+The intra-relation embeddings from all relations are combined through an inter-relation aggregator. In this work, we use the \textbf{CARE-Weight} variant, which employs learnable per-dimension weights for each relation:
+
+\begin{equation}
+h_v = \text{ReLU}\left( W \cdot h_v + \sum_{r=1}^{R} w_r \odot (W \cdot h^{(r)}_{\mathcal{N}(v)}) \right)
+\end{equation}
+
+where \( W \) is a shared transformation matrix, \( w_r = \text{softmax}(\alpha)_{:,r} \) are per-dimension softmax-normalised weights derived from a learnable parameter \( \alpha \in \mathbb{R}^{d \times R} \), and \( \odot \) denotes element-wise multiplication.
+
+\subsubsection{Training Objective}
+
+The model is trained end-to-end with a combined loss function consisting of two components:
+
+\begin{equation}
+\mathcal{L} = \mathcal{L}_{\text{GNN}} + \lambda_1 \cdot \mathcal{L}_{\text{simi}}
+\end{equation}
+
+where \( \mathcal{L}_{\text{GNN}} \) is the cross-entropy loss on the final GNN predictions and \( \mathcal{L}_{\text{simi}} \) is the cross-entropy loss on the label predictor's output. The similarity loss ensures that the label predictor learns to distinguish fraudulent from benign nodes, which in turn produces meaningful distance scores for neighbour filtering. The hyperparameter \( \lambda_1 \) controls the relative importance of the similarity loss.
+
+\subsubsection{CARE-GNN Hyperparameters}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Embedding dimension (\( d \)) & 64 \\
+Dropout rate & 0.6 \\
+Learning rate & \( 1 \times 10^{-2} \) \\
+Weight decay (\( \lambda_2 \)) & \( 1 \times 10^{-3} \) \\
+Batch size & 256 \\
+Epochs & 60 \\
+Similarity loss weight (\( \lambda_1 \)) & 2 \\
+RL step size (\( \tau \)) & 0.02 \\
+Initial filtering threshold (\( p_0 \)) & 0.5 \\
+Under-sampling ratio (pos:neg) & 1:1 \\
+Inter-relation aggregator & Weight \\
+Number of GNN layers & 1 \\
+\hline
+\end{tabular}
+\caption{Hyperparameters for the CARE-GNN model.}
+\end{table}
+
+
+\section{Reinforcement Learning Module}
+\label{sec:rl-module}
+
+A key contribution of CARE-GNN is the use of reinforcement learning to adaptively determine the optimal neighbour filtering threshold \( p_r \) for each relation \( r \). Since the quality of the filtered neighbourhood cannot be assessed directly during training, the RL module formulates the threshold selection as a Bernoulli Multi-Armed Bandit (BMAB) problem.
+
+\subsection{Problem Formulation}
+
+The RL process is defined as a BMAB \( B(\mathcal{A}, f, T) \), where \( \mathcal{A} \) is the action space, \( f \) is the reward function, and \( T \) is the terminal condition. The RL agent (neighbour selector) interacts with the GNN by adjusting the filtering thresholds based on observed rewards.
+
+\subsection{Action Space}
+
+At each epoch, the RL agent selects one of two actions for each relation \( r \):
+
+\begin{equation}
+a_r = \begin{cases}
++\tau & \text{(increase threshold: keep more neighbours)} \\
+-\tau & \text{(decrease threshold: keep fewer neighbours)}
+\end{cases}
+\end{equation}
+
+where \( \tau = 0.02 \) is the step size. The threshold is updated as \( p_r \leftarrow p_r + a_r \) and clamped to \([0.001, 0.999]\) to prevent degenerate values.
+
+\subsection{Reward Function}
+
+The reward is based on the change in average neighbour distance between consecutive epochs. For each relation \( r \), the average distance across all neighbours of positive (fraudulent) nodes at epoch \( e \) is:
+
+\begin{equation}
+d_r(e) = \frac{1}{|\mathcal{V}^+|} \sum_{v \in \mathcal{V}^+} \frac{1}{|\mathcal{N}_r(v)|} \sum_{u \in \mathcal{N}_r(v)} D(v, u)
+\end{equation}
+
+where \( \mathcal{V}^+ \) denotes the set of positive centre nodes in the batch. The reward for relation \( r \) at epoch \( e \) is then defined as:
+
+\begin{equation}
+f(p_r, e) = \begin{cases}
++1 & \text{if } d_r(e-1) - d_r(e) \geq 0 \\
+-1 & \text{otherwise}
+\end{cases}
+\end{equation}
+
+A positive reward indicates that the average neighbour distance has decreased (neighbours became more similar), prompting the agent to increase the threshold and admit more neighbours. A negative reward indicates increasing distances, prompting the agent to tighten the filter.
+
+\subsection{Threshold Dynamics}
+
+The reward-action mapping produces the following training dynamics: as the label predictor improves during training, it learns to separate fraudulent from benign nodes more effectively. This causes the L1 distances between fraudulent centre nodes and their benign (camouflaged) neighbours to increase, generating predominantly negative rewards. Consequently, the filtering thresholds decrease from the initial value of 0.5, progressively excluding the most dissimilar---and likely camouflaged---neighbours. As the thresholds stabilise, the GNN aggregates information from an increasingly refined neighbourhood, improving classification performance.
+
+\subsection{Comparison of Model Architectures}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Aspect} & \textbf{GCN} & \textbf{GraphSAGE} & \textbf{CARE-GNN} \\
+\hline
+Neighbour Filtering & Top-10\% cosine sim. & None & RL-adaptive top-\(p\) \\
+Graph Normalisation & Symmetric & Row & Internal mean-agg \\
+Relation Fusion & Learnable softmax & Mean & Learnable per-dim \\
+Layers & 1 & 2 & 1 \\
+Aggregation & Spectral conv. & Mean agg. & Similarity-filtered mean \\
+Self-Loops & Added & Not added & Not added \\
+Anti-Camouflage & No & No & Yes (RL + similarity) \\
+\hline
+\end{tabular}
+\caption{Comparison of the three GNN architectures.}
+\end{table}
+
+\noindent
+All three models were trained under comparable optimisation settings to ensure a fair comparison of their ability to leverage multi-relational graph structure for fraud detection. CARE-GNN is the only model that explicitly addresses the camouflage problem through its integrated similarity measure and reinforcement learning module.
+
+
+
+\clearpage
