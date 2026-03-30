@@ -1,7 +1,7 @@
 \chapter{Methodology}
 \lhead{\emph{Chapter3}}
 
-In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on the Amazon fraud dataset. We first describe the dataset and the preprocessing steps required to construct the multi-relational graphs, then discuss the three architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. Finally, we detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours.
+In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on the Amazon fraud dataset. We first describe the dataset and the preprocessing steps required to construct the multi-relational graphs, then discuss the three baseline architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. We then detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours, and finally present our proposed extension, CAPN (Camouflage-Aware Policy Network), which replaces the heuristic RL module with a learned policy network that produces per-node adaptive filtering thresholds.
 
 \section{Dataset Description}
 
@@ -408,25 +408,278 @@ The reward-action mapping produces the following training dynamics: as the label
 
 \begin{table}[h!]
 \centering
-\begin{tabular}{|l|c|c|c|}
+\begin{tabular}{|l|c|c|c|c|}
 \hline
-\textbf{Aspect} & \textbf{GCN} & \textbf{GraphSAGE} & \textbf{CARE-GNN} \\
+\textbf{Aspect} & \textbf{GCN} & \textbf{GraphSAGE} & \textbf{CARE-GNN} & \textbf{CAPN} \\
 \hline
-Neighbour Filtering & Top-10\% cosine sim. & None & RL-adaptive top-\(p\) \\
-Graph Normalisation & Symmetric & Row & Internal mean-agg \\
-Relation Fusion & Learnable softmax & Mean & Learnable per-dim \\
-Layers & 1 & 2 & 1 \\
-Aggregation & Spectral conv. & Mean agg. & Similarity-filtered mean \\
-Self-Loops & Added & Not added & Not added \\
-Anti-Camouflage & No & No & Yes (RL + similarity) \\
+Neighbour Filtering & Top-10\% cosine & None & RL-adaptive top-\(p\) & Per-node policy \\
+Graph Normalisation & Symmetric & Row & Internal mean-agg & Internal mean-agg \\
+Relation Fusion & Learnable softmax & Mean & Learnable per-dim & Learnable per-dim \\
+Layers & 1 & 2 & 1 & 1 \\
+Aggregation & Spectral conv. & Mean agg. & Similarity-filtered & Policy-filtered mean \\
+Self-Loops & Added & Not added & Not added & Not added \\
+Anti-Camouflage & No & No & RL + similarity & Policy + multi-view \\
+Threshold Granularity & N/A & N/A & Global per-relation & Per-node per-relation \\
 \hline
 \end{tabular}
-\caption{Comparison of the three GNN architectures.}
+\caption{Comparison of the four GNN architectures.}
 \end{table}
 
 \noindent
-All three models were trained under comparable optimisation settings to ensure a fair comparison of their ability to leverage multi-relational graph structure for fraud detection. CARE-GNN is the only model that explicitly addresses the camouflage problem through its integrated similarity measure and reinforcement learning module.
+All models were trained under comparable optimisation settings to ensure a fair comparison. CARE-GNN and CAPN both address the camouflage problem, but CAPN extends CARE-GNN with a learned policy network that produces node-level adaptive thresholds, a shaped reward function, and multi-view distance, as detailed in Section~\ref{sec:capn}.
 
+
+
+\section{CAPN: Camouflage-Aware Policy Network}
+\label{sec:capn}
+
+While CARE-GNN's reinforcement learning module represents a significant advance over static neighbour selection, it exhibits several limitations that constrain its effectiveness against sophisticated camouflage strategies. This section presents the \textbf{Camouflage-Aware Policy Network (CAPN)}, the primary contribution of this thesis, which replaces the heuristic RL module with a learned policy network that addresses each of these limitations systematically.
+
+\subsection{Limitations of the Original RL Module}
+
+The original RL module (Section~\ref{sec:rl-module}) has four key limitations:
+
+\begin{enumerate}
+    \item \textbf{Global thresholds.} A single threshold \( p_r \) is shared across all nodes within each relation, ignoring the fact that different nodes may require different levels of filtering based on their local neighbourhood structure.
+    \item \textbf{Binary rewards.} The reward signal is limited to \( \{+1, -1\} \), discarding information about the magnitude of improvement or degradation in neighbour quality.
+    \item \textbf{Epoch-level updates.} Thresholds are adjusted once per epoch via a fixed step size \( \tau \), resulting in slow adaptation that cannot respond to batch-level variation.
+    \item \textbf{Linear label predictor.} The label-aware similarity measure relies on a single linear layer \( \texttt{nn.Linear}(D, 2) \), which cannot capture non-linear feature-label relationships.
+\end{enumerate}
+
+CAPN addresses all four limitations through five integrated components: an enhanced label predictor, a state constructor, a policy network, a shaped reward function, and a multi-view distance metric.
+
+\subsection{Enhanced Label Predictor}
+
+CAPN replaces the original linear label predictor with a two-layer MLP that captures non-linear feature-label relationships:
+
+\begin{equation}
+S(v) = W_2 \cdot \text{ReLU}(W_1 \cdot x_v + b_1) + b_2
+\end{equation}
+
+\noindent
+where \( W_1 \in \mathbb{R}^{d_h \times D} \), \( W_2 \in \mathbb{R}^{2 \times d_h} \), and \( d_h = \max(D/2, 32) \). Dropout with rate 0.3 is applied between the two layers. The enhanced predictor also computes a prediction confidence score based on the normalised entropy of the softmax output:
+
+\begin{equation}
+\text{conf}(v) = 1 - \frac{H(\text{softmax}(S(v)))}{\log C}
+\end{equation}
+
+\noindent
+where \( H(\cdot) \) denotes Shannon entropy and \( C = 2 \) is the number of classes. A confidence of 1 indicates a deterministic prediction, while 0 indicates maximum uncertainty. This confidence is used as a component of the state vector for the policy network.
+
+\subsection{State Constructor}
+
+For the policy network to make informed per-node filtering decisions, it requires a comprehensive representation of each node's local context. The state constructor builds a state vector for each node \( v \) in each relation \( r \) by concatenating the node's features with five structural and label-aware statistics:
+
+\begin{equation}
+\mathbf{s}_v^r = \left[ x_v, \; \text{conf}(v), \; \hat{d}_r(v), \; \bar{\delta}_r(v), \; J_r(v), \; \sigma_r(v) \right]
+\end{equation}
+
+\noindent
+yielding a state dimension of \( D + 5 \). Each component is defined as follows:
+
+\begin{itemize}
+    \item \textbf{Node features} \( x_v \in \mathbb{R}^D \): the raw feature vector of node \( v \).
+
+    \item \textbf{Label confidence} \( \text{conf}(v) \in [0, 1] \): the normalised entropy-based confidence from the enhanced label predictor (Equation above).
+
+    \item \textbf{Normalised degree} \( \hat{d}_r(v) \): the degree of node \( v \) in relation \( r \), normalised by the maximum degree in that relation:
+    \begin{equation}
+    \hat{d}_r(v) = \frac{|\mathcal{N}_r(v)|}{\max_{u \in \mathcal{V}} |\mathcal{N}_r(u)|}
+    \end{equation}
+
+    \item \textbf{Mean label distance} \( \bar{\delta}_r(v) \): the average L1 distance between the label predictor scores of \( v \) and its neighbours in relation \( r \):
+    \begin{equation}
+    \bar{\delta}_r(v) = \frac{1}{|\mathcal{N}_r(v)|} \sum_{u \in \mathcal{N}_r(v)} |S(v)_0 - S(u)_0|
+    \end{equation}
+
+    \item \textbf{Structural overlap} \( J_r(v) \): the Jaccard similarity between the neighbours of \( v \) in relation \( r \) and in the homogeneous graph:
+    \begin{equation}
+    J_r(v) = \frac{|\mathcal{N}_r(v) \cap \mathcal{N}_{\text{homo}}(v)|}{|\mathcal{N}_r(v) \cup \mathcal{N}_{\text{homo}}(v)|}
+    \end{equation}
+
+    \item \textbf{Feature variance} \( \sigma_r(v) \): the mean feature-wise variance across the neighbours of \( v \) in relation \( r \):
+    \begin{equation}
+    \sigma_r(v) = \frac{1}{D} \sum_{d=1}^{D} \text{Var}\left( \{ x_{u,d} : u \in \mathcal{N}_r(v) \} \right)
+    \end{equation}
+    This is computed only when \( |\mathcal{N}_r(v)| \geq 2 \); otherwise it defaults to zero.
+\end{itemize}
+
+\noindent
+The state vector provides the policy network with sufficient information to assess each node's neighbourhood quality: nodes with high mean distance, low structural overlap, or high feature variance among neighbours are likely surrounded by camouflaged connections and may benefit from more aggressive filtering.
+
+\subsection{Policy Network}
+\label{sec:policy-network}
+
+The policy network is a neural network that maps state vectors to per-node filtering thresholds via a Beta distribution. It consists of a shared feature extractor followed by per-relation output heads.
+
+\subsubsection{Architecture}
+
+The shared feature extractor is a two-layer MLP:
+
+\begin{equation}
+\mathbf{h} = \text{ReLU}\left( W_4 \cdot \text{ReLU}\left( W_3 \cdot \mathbf{s}_v^r + b_3 \right) + b_4 \right)
+\end{equation}
+
+\noindent
+where \( W_3 \in \mathbb{R}^{64 \times (D+5)} \) and \( W_4 \in \mathbb{R}^{32 \times 64} \). This shared representation is then passed to one of \( R \) relation-specific linear heads:
+
+\begin{equation}
+\mathbf{o}_r = W_r^{\text{head}} \cdot \mathbf{h} + b_r^{\text{head}}, \qquad W_r^{\text{head}} \in \mathbb{R}^{2 \times 32}
+\end{equation}
+
+\noindent
+Each head outputs two values that parameterise a Beta distribution.
+
+\subsubsection{Beta Distribution Parameterisation}
+
+The two outputs are transformed via the softplus function with a positive offset to produce valid Beta distribution parameters:
+
+\begin{equation}
+\alpha_v^r = \text{softplus}(\mathbf{o}_{r,0}) + 0.5, \qquad \beta_v^r = \text{softplus}(\mathbf{o}_{r,1}) + 0.5
+\end{equation}
+
+\noindent
+The offset of 0.5 ensures that both parameters remain bounded away from zero, preventing degenerate distributions. The filtering threshold for node \( v \) in relation \( r \) is then obtained as:
+
+\begin{equation}
+t_v^r \sim \text{Beta}(\alpha_v^r, \beta_v^r) \qquad \text{(training)}
+\end{equation}
+
+\begin{equation}
+t_v^r = \frac{\alpha_v^r}{\alpha_v^r + \beta_v^r} \qquad \text{(inference)}
+\end{equation}
+
+\noindent
+During training, thresholds are sampled stochastically from the Beta distribution to enable exploration; during inference, the deterministic mean is used. The number of neighbours retained for node \( v \) in relation \( r \) is:
+
+\begin{equation}
+k_v^r = \max\left(1, \; \left\lceil |\mathcal{N}_r(v)| \times t_v^r \right\rceil \right)
+\end{equation}
+
+\subsection{Multi-View Distance}
+
+The original CARE-GNN uses only L1 label-aware distance to rank neighbours. CAPN extends this with a multi-view distance that combines label-aware and structural signals:
+
+\begin{equation}
+d(v, u, r) = \gamma_r \cdot |S(v) - S(u)|_1 + (1 - \gamma_r) \cdot \left(1 - \frac{|\mathcal{N}_r(v) \cap \mathcal{N}_r(u)|}{|\mathcal{N}_r(v) \cup \mathcal{N}_r(u)|}\right)
+\end{equation}
+
+\noindent
+where \( \gamma_r \in [0, 1] \) is a per-relation mixing parameter (default \( \gamma_r = 0.7 \)) that controls the relative importance of label-aware versus structural distance. The structural component measures the Jaccard distance between the neighbourhoods of the centre node and its neighbour, capturing topological dissimilarity that is not visible through feature-based similarity alone. This is particularly effective against relation camouflage, where fraudsters establish connections with benign users but maintain structurally different neighbourhood patterns.
+
+\subsection{Shaped Reward Function}
+
+CAPN replaces the binary reward of the original RL module with a continuous, three-component shaped reward that provides richer training signal:
+
+\begin{equation}
+R = w_1 \cdot \text{clamp}\!\left(\frac{\bar{d}_{t-1} - \bar{d}_t}{|\bar{d}_{t-1}| + \epsilon}, \, -1, \, 1\right) + w_2 \cdot \left(\text{acc}_t - \hat{\text{acc}}_t\right) - w_3 \cdot \overline{|t - 0.5|}
+\end{equation}
+
+\noindent
+where the three components are:
+
+\begin{enumerate}
+    \item \textbf{Distance improvement} (weight \( w_1 = 0.5 \)): measures the relative change in average neighbour distance between consecutive batches, normalised by the previous distance and clamped to \([-1, 1]\).
+
+    \item \textbf{Accuracy signal} (weight \( w_2 = 0.3 \)): measures the difference between the current batch accuracy \( \text{acc}_t \) and an exponential moving average (EMA) baseline \( \hat{\text{acc}}_t \), with decay factor 0.95:
+    \begin{equation}
+    \hat{\text{acc}}_{t+1} = 0.95 \cdot \hat{\text{acc}}_t + 0.05 \cdot \text{acc}_t
+    \end{equation}
+
+    \item \textbf{Threshold regularisation} (weight \( w_3 = 0.2 \)): penalises extreme threshold values by computing the mean absolute deviation from 0.5 across all relations, preventing the policy from collapsing to trivially aggressive or permissive filtering.
+\end{enumerate}
+
+\noindent
+The reward weights sum to 1.0 by design, ensuring a balanced trade-off between neighbour quality improvement, classification performance, and threshold stability.
+
+\subsection{Training Objective}
+
+CAPN is trained end-to-end with a three-term loss function that combines supervised learning with policy gradient optimisation:
+
+\begin{equation}
+\mathcal{L} = \mathcal{L}_{\text{GNN}} + \lambda_1 \cdot \mathcal{L}_{\text{label}} + \lambda_{\pi} \cdot \mathcal{L}_{\text{policy}}
+\end{equation}
+
+\noindent
+where the first two terms are identical to CARE-GNN (Equation~20), and the policy gradient loss is computed via the REINFORCE estimator \cite{williams1992simple}:
+
+\begin{equation}
+\mathcal{L}_{\text{policy}} = -R \cdot \sum_{r=1}^{R} \frac{1}{|\mathcal{B}|} \sum_{v \in \mathcal{B}} \log \pi_\theta(t_v^r \mid \mathbf{s}_v^r)
+\end{equation}
+
+\noindent
+where \( \pi_\theta \) is the policy network parameterised by \( \theta \), \( t_v^r \) is the sampled threshold, \( \mathbf{s}_v^r \) is the state vector, \( \mathcal{B} \) is the current mini-batch, and \( R \) is the shaped reward. The log-probability of the Beta distribution is computed analytically as:
+
+\begin{equation}
+\log \pi_\theta(t \mid \alpha, \beta) = (\alpha - 1) \log t + (\beta - 1) \log(1 - t) - \log B(\alpha, \beta)
+\end{equation}
+
+\noindent
+where \( \log B(\alpha, \beta) = \log \Gamma(\alpha) + \log \Gamma(\beta) - \log \Gamma(\alpha + \beta) \).
+
+A dual optimiser strategy is employed: the GNN parameters (embedding layers, aggregators, classifier) are trained with Adam at learning rate \( 1 \times 10^{-2} \), while the policy network parameters are trained with a separate Adam optimiser at learning rate \( 1 \times 10^{-3} \). Both optimisers are updated at every mini-batch, enabling the policy to adapt rapidly to evolving neighbourhood statistics during training.
+
+\subsection{LLM Prior Warm-Starting}
+
+To accelerate policy convergence, CAPN optionally incorporates pre-generated domain priors from a large language model (LLM). For each relation, two scores are provided: an \textit{importance} score reflecting the relation's informativeness for fraud detection, and a \textit{camouflage risk} score estimating the susceptibility of the relation to camouflage manipulation. These priors are used in two ways:
+
+\begin{enumerate}
+    \item \textbf{Policy network bias initialisation.} The per-relation head biases are set according to the camouflage risk:
+    \begin{equation}
+    b_{\alpha}^r = 1.0 - c_r, \qquad b_{\beta}^r = 1.0 + c_r
+    \end{equation}
+    where \( c_r \in [0, 1] \) is the camouflage risk for relation \( r \). Higher risk produces a lower initial \( \alpha/\beta \) ratio, biasing the policy towards more aggressive filtering for high-risk relations from the start of training.
+
+    \item \textbf{Multi-view distance initialisation.} The per-relation mixing parameter \( \gamma_r \) is initialised from the importance score, allowing relations deemed more informative to place greater weight on label-aware distance.
+\end{enumerate}
+
+\subsection{Comparison: Original RL vs CAPN}
+
+Table~\ref{tab:rl-vs-capn} summarises the key differences between the original RL module and CAPN.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|c|}
+\hline
+\textbf{Aspect} & \textbf{Original RL} & \textbf{CAPN} \\
+\hline
+Threshold granularity & Global per-relation & Per-node per-relation \\
+Update frequency & Per-epoch & Per-batch \\
+Reward signal & Binary (\( \pm 1 \)) & Shaped (3-component) \\
+Label predictor & Linear & 2-layer MLP \\
+Distance metric & L1 label only & Multi-view (label + structural) \\
+Initialisation & Fixed \( p_0 = 0.5 \) & Optional LLM priors \\
+Optimisation & Step-size heuristic & REINFORCE policy gradient \\
+\hline
+\end{tabular}
+\caption{Comparison of the original RL module and the proposed CAPN extension.}
+\label{tab:rl-vs-capn}
+\end{table}
+
+\subsection{CAPN Hyperparameters}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Policy network hidden dimension & 64 \\
+Policy network learning rate & \( 1 \times 10^{-3} \) \\
+Policy loss weight (\( \lambda_\pi \)) & 0.1 \\
+Reward weight: distance (\( w_1 \)) & 0.5 \\
+Reward weight: accuracy (\( w_2 \)) & 0.3 \\
+Reward weight: regularisation (\( w_3 \)) & 0.2 \\
+EMA baseline decay & 0.95 \\
+Multi-view mixing (\( \gamma_r \)) & 0.7 \\
+Enhanced label predictor dropout & 0.3 \\
+Beta distribution offset & 0.5 \\
+GNN optimiser & Adam (lr = \( 1 \times 10^{-2} \)) \\
+Policy optimiser & Adam (lr = \( 1 \times 10^{-3} \)) \\
+\hline
+\end{tabular}
+\caption{Hyperparameters for the CAPN extension.}
+\end{table}
 
 
 \clearpage
