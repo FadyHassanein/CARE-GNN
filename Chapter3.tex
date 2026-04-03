@@ -1,66 +1,87 @@
 \chapter{Methodology}
 \lhead{\emph{Chapter3}}
 
-In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on the Amazon fraud dataset. We first describe the dataset and the preprocessing steps required to construct the multi-relational graphs, then discuss the three baseline architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. We then detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours, and finally present our proposed extension, CAPN (Camouflage-Aware Policy Network), which replaces the heuristic RL module with a learned policy network that produces per-node adaptive filtering thresholds.
+In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on two benchmark datasets: the Amazon fraud dataset and the Yelp fraud dataset. We first describe both datasets and the preprocessing steps required to construct the multi-relational graphs, then discuss the three baseline architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. We then detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours, present our proposed extension, CAPN (Camouflage-Aware Policy Network), which replaces the heuristic RL module with a learned policy network, and describe the ablation study framework used to evaluate each component of CAPN systematically.
 
 \section{Dataset Description}
 
-The experiments in this study are based on the Amazon fraud dataset, which models
-user behaviour and relational interactions within an online review ecosystem. The dataset
-contains a total of \textbf{11,944} users, each represented as a node with \textbf{25} numerical
-features describing behavioural or profile-based attributes. Every user is labelled as either
-normal (0) or suspicious (1), with \textbf{11,123} normal users and \textbf{821} suspicious users,
-indicating a substantial class imbalance characteristic of fraud detection tasks.
+The experiments in this study are conducted on two benchmark datasets for graph-based fraud detection: the Amazon fraud dataset and the Yelp fraud dataset (YelpChi). Both datasets model user behaviour through multi-relational graphs with anonymised numerical features.
 
-In addition to node-level attributes, the dataset provides three distinct relational graphs
-defined over the same set of users:
+\subsection{Amazon Fraud Dataset}
+
+The Amazon dataset contains \textbf{11,944} users, each represented as a node with \textbf{25} numerical features describing behavioural and profile-based attributes (star rating distributions, review counts, and review statistics). Users are labelled as either benign~(0) or fraudulent~(1), with \textbf{11,123} benign users and \textbf{821} fraudulent users (\textbf{6.9\%} fraud rate). Nodes 0--3,304 are unlabelled; only nodes 3,305 and above carry labels. The dataset provides three relational graphs:
 
 \begin{itemize}
-    \item \textbf{UPU} (User--Product--User): connects users who reviewed the same products.
-    \begin{itemize}
-        \item Edges: 175{,}608
-        \item Average degree: 29.4
-        \item Connected components: 2{,}051
-        \item Largest component: 9{,}314 nodes
-    \end{itemize}
-
-    \item \textbf{USU} (User--Seller--User): connects users who assigned the same star rating
-    to the same seller within one week.
-    \begin{itemize}
-        \item Edges: 3{,}566{,}479
-        \item Average degree: 597.2
-        \item Connected components: 91
-        \item Largest component: 11{,}854 nodes
-    \end{itemize}
-
-    \item \textbf{UVU} (User--View--User): connects users whose review texts are highly similar
-    (top-5\% TF-IDF cosine similarity).
-    \begin{itemize}
-        \item Edges: 1{,}036{,}737
-        \item Average degree: 173.6
-        \item Connected components: 106
-        \item Largest component: 11{,}795 nodes
-    \end{itemize}
+    \item \textbf{UPU} (User--Product--User): connects users who reviewed the same products. The sparsest relation (avg.\ degree 30.4), providing the clearest fraud signal---fraudulent nodes have 32.5\% fraud neighbours vs.\ 13.2\% for benign nodes.
+    \item \textbf{USU} (User--Seller--User): connects users who assigned the same star rating to the same seller within one week. Extremely dense (avg.\ degree 598.2) with weak homophily (13.0\% vs.\ 7.5\% fraud neighbours).
+    \item \textbf{UVU} (User--View--User): connects users whose review texts have high TF-IDF cosine similarity. Moderately dense (avg.\ degree 174.6) with the strongest fraud signal---fraudulent nodes have 33.1\% fraud neighbours vs.\ only 1.5\% for benign nodes.
 \end{itemize}
 
 \begin{table}[h!]
 \centering
-\begin{tabular}{lrrrrr}
+\begin{tabular}{lrrrr}
 \hline
-Relation & Nodes & Edges & Avg.\ Degree & Components & Largest Comp. \\
+Relation & Edges & Avg.\ Degree & Fraud Neigh.\ (\%) & Benign Neigh.\ (\%) \\
 \hline
-UPU & 11{,}944 & 175{,}608 & 29.4  & 2{,}051 & 9{,}314 \\
-USU & 11{,}944 & 3{,}566{,}479 & 597.2 & 91    & 11{,}854 \\
-UVU & 11{,}944 & 1{,}036{,}737 & 173.6 & 106   & 11{,}795 \\
+UPU & 175{,}608 & 30.4 & 32.5 & 13.2 \\
+USU & 3{,}566{,}479 & 598.2 & 13.0 & 7.5 \\
+UVU & 1{,}036{,}737 & 174.6 & 33.1 & 1.5 \\
 \hline
 \end{tabular}
-\caption{Summary statistics for each relational graph in the Amazon fraud dataset.}
+\caption{Summary statistics for each relational graph in the Amazon fraud dataset. Fraud/Benign Neigh.\ columns report the average fraction of fraudulent neighbours for fraud and benign nodes respectively.}
 \end{table}
 
-These statistics highlight substantial variation in structural density across the three
-relations: UPU is the sparsest graph, USU is extremely dense, and UVU occupies an
-intermediate level of connectivity. Each relation therefore captures a distinct behavioural
-dimension and provides complementary information for multi-relational graph learning.
+Cross-relation analysis reveals that UPU and UVU capture largely complementary information (Jaccard overlap 0.064), while UPU and USU share moderate overlap (Jaccard 0.209). Feature analysis shows several strong individual fraud predictors: feature~19 (point-biserial $r = +0.658$), features~15--18 (star rating variants, $|r| > 0.4$), and feature~12 (review ratio, $r = +0.436$).
+
+\subsection{Yelp Fraud Dataset (YelpChi)}
+
+The Yelp dataset contains \textbf{45,954} reviews (nodes) with \textbf{32} pre-normalised features (scaled to $[0, 1]$), of which \textbf{6,677} are fraudulent (\textbf{14.5\%} fraud rate). Unlike Amazon, all nodes carry labels. The dataset provides three relational graphs:
+
+\begin{itemize}
+    \item \textbf{RUR} (Review--User--Review): connects reviews written by the same user. Very sparse (avg.\ degree 3.1) but exhibits \textbf{perfect label homophily}---all reviews by the same user share the same fraud label.
+    \item \textbf{RTR} (Review--Time--Review): connects reviews sharing the same star rating and timestamp. Moderately dense (avg.\ degree 26.0) with strong fraud signal (37.1\% vs.\ 8.0\%).
+    \item \textbf{RSR} (Review--Star--Review): connects reviews with the same sentiment score. Very dense (avg.\ degree 149.1) with moderate fraud signal (30.6\% vs.\ 11.5\%).
+\end{itemize}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lrrrr}
+\hline
+Relation & Edges & Avg.\ Degree & Fraud Neigh.\ (\%) & Benign Neigh.\ (\%) \\
+\hline
+RUR & 144{,}584 & 3.1 & 100.0 & 0.0 \\
+RTR & 1{,}193{,}186 & 26.0 & 37.1 & 8.0 \\
+RSR & 6{,}851{,}440 & 149.1 & 30.6 & 11.5 \\
+\hline
+\end{tabular}
+\caption{Summary statistics for each relational graph in the Yelp fraud dataset.}
+\end{table}
+
+\noindent
+Individual feature correlations with the fraud label are considerably weaker in Yelp (max $|r| = 0.235$ for feature~5) compared to Amazon. The graph structure---particularly RUR's perfect homophily---carries the primary fraud signal, making Yelp a complementary evaluation setting where relational information dominates over feature information.
+
+\subsection{Dataset Comparison}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcc}
+\hline
+\textbf{Property} & \textbf{Amazon} & \textbf{Yelp} \\
+\hline
+Nodes & 11{,}944 & 45{,}954 \\
+Features & 25 (raw) & 32 (normalised) \\
+Fraud rate & 6.9\% & 14.5\% \\
+Relations & UPU, USU, UVU & RUR, RTR, RSR \\
+Strongest signal & Features ($r = 0.66$) & Structure (RUR = 100\%) \\
+Feature normalisation & Not pre-normalised & Pre-normalised to $[0,1]$ \\
+Labelled nodes & 3,305+ only & All \\
+\hline
+\end{tabular}
+\caption{Comparison of the two benchmark datasets.}
+\end{table}
+
+\noindent
+Evaluating on both datasets ensures that our methods generalise across different fraud rate regimes, feature-to-structure signal balances, and graph density profiles.
 
 
 \section{Data Processing}
@@ -125,16 +146,23 @@ A_{\text{sparse}} = \texttt{torch.sparse\_coo\_tensor}(i, v, \text{size} = A.\te
 where \( i \) stores the indices of non-zero entries and \( v \) stores their values.
 
 \subsection{Train/Validation/Test Splits}
-Stratified sampling was used to split the dataset into 60\% training, 20\% validation, and 20\% test sets, maintaining label proportions across all splits. This ensured that the class distribution was preserved during training and evaluation.
+Stratified sampling was used to split the labelled nodes into 25\% training, 15\% validation, and 60\% test sets (random state = 2), maintaining label proportions across all splits. For Amazon, only nodes 3,305 and above are included in the split (nodes 0--3,304 are unlabelled). For Yelp, all 45,954 nodes participate in the split. The large test set (60\%) is standard for this benchmark and ensures robust evaluation on a representative sample.
 
-\subsection{Class Weighting}
-Due to the severe class imbalance, class weights were computed to increase the penalty for misclassifying the minority (fraudulent) class. If \( n_0 \) and \( n_1 \) denote the number of negative and positive samples respectively, the weight for the positive class was defined as:
+\subsection{Class Imbalance Handling}
+Two complementary strategies address class imbalance:
 
-\begin{equation}
-w_{+} = \frac{n_0}{n_1}
-\end{equation}
+\begin{enumerate}
+    \item \textbf{Under-sampling.} By default, CARE-GNN and CAPN employ 1:1 negative under-sampling: at each epoch, a random subset of benign nodes equal in size to the fraud nodes is sampled, producing balanced training batches.
 
-These weights were applied during loss computation to balance the training signal.
+    \item \textbf{Class weighting.} When under-sampling is disabled, inverse-frequency class weights are applied to the cross-entropy loss:
+    \begin{equation}
+    w_c = \frac{N}{2 \cdot n_c}
+    \end{equation}
+    where \( N \) is the total number of training samples and \( n_c \) is the count of class \( c \).
+\end{enumerate}
+
+\noindent
+\textbf{Important:} class weighting and under-sampling are mutually exclusive. Applying class weights when under-sampling is already active creates a double-correction that causes the model to over-predict the minority class. In our implementation, class weights are only applied when under-sampling is disabled.
 
 \subsection{Model-Specific Preprocessing Summary}
 
@@ -315,13 +343,13 @@ where \( \mathcal{N}_r(v) \) denotes the set of selected neighbours of node \( v
 
 \subsubsection{Inter-Relation Aggregation}
 
-The intra-relation embeddings from all relations are combined through an inter-relation aggregator. In this work, we use the \textbf{CARE-Weight} variant, which employs learnable per-dimension weights for each relation:
+The intra-relation embeddings from all relations are combined through an inter-relation aggregator. In this work, we primarily use the \textbf{GNN (Threshold)} variant, which uses the RL-learned filtering thresholds as inter-relation weights:
 
 \begin{equation}
-h_v = \text{ReLU}\left( W \cdot h_v + \sum_{r=1}^{R} w_r \odot (W \cdot h^{(r)}_{\mathcal{N}(v)}) \right)
+h_v = \text{ReLU}\left( W \cdot h_v + \sum_{r=1}^{R} p_r \cdot (W \cdot h^{(r)}_{\mathcal{N}(v)}) \right)
 \end{equation}
 
-where \( W \) is a shared transformation matrix, \( w_r = \text{softmax}(\alpha)_{:,r} \) are per-dimension softmax-normalised weights derived from a learnable parameter \( \alpha \in \mathbb{R}^{d \times R} \), and \( \odot \) denotes element-wise multiplication.
+where \( W \) is a shared transformation matrix and \( p_r \) is the filtering threshold for relation \( r \). This ties the inter-relation weighting directly to the RL-learned filtering quality: relations with higher thresholds (admitting more neighbours) receive proportionally higher weight in the final representation. Alternative inter-aggregation strategies (Attention, learnable Weight, and Mean) are evaluated in the ablation studies (Section~\ref{sec:ablation}).
 
 \subsubsection{Training Objective}
 
@@ -345,13 +373,14 @@ Embedding dimension (\( d \)) & 64 \\
 Dropout rate & 0.6 \\
 Learning rate & \( 1 \times 10^{-2} \) \\
 Weight decay (\( \lambda_2 \)) & \( 1 \times 10^{-3} \) \\
-Batch size & 256 \\
-Epochs & 60 \\
+Batch size & 1{,}024 (Yelp) / 256 (Amazon) \\
+Epochs & 31 \\
 Similarity loss weight (\( \lambda_1 \)) & 2 \\
 RL step size (\( \tau \)) & 0.02 \\
 Initial filtering threshold (\( p_0 \)) & 0.5 \\
 Under-sampling ratio (pos:neg) & 1:1 \\
-Inter-relation aggregator & Weight \\
+Inter-relation aggregator & GNN (Threshold) \\
+Gradient clipping & 1.0 \\
 Number of GNN layers & 1 \\
 \hline
 \end{tabular}
@@ -619,6 +648,22 @@ where \( \log B(\alpha, \beta) = \log \Gamma(\alpha) + \log \Gamma(\beta) - \log
 
 A dual optimiser strategy is employed: the GNN parameters (embedding layers, aggregators, classifier) are trained with Adam at learning rate \( 1 \times 10^{-2} \), while the policy network parameters are trained with a separate Adam optimiser at learning rate \( 1 \times 10^{-3} \). Both optimisers are updated at every mini-batch, enabling the policy to adapt rapidly to evolving neighbourhood statistics during training.
 
+\subsection{Implementation Details}
+
+Several implementation details are critical for stable CAPN training:
+
+\subsubsection{Separate Gradient Clipping}
+REINFORCE gradients are inherently high-variance compared to supervised gradients. Joint gradient clipping at a single threshold (e.g., 1.0) crushes the policy gradients, preventing the policy from learning. We therefore apply \textbf{separate gradient clipping}: GNN parameters are clipped at max norm 1.0, while policy network parameters are clipped at max norm 5.0, allowing the policy sufficient gradient magnitude to learn from the noisy REINFORCE signal.
+
+\subsubsection{SafeLgamma for CUDA Compatibility}
+The Beta log-probability computation (Equation~38) requires evaluating \( \log \Gamma(\cdot) \) and its derivative \( \psi(\cdot) \) (digamma). On certain CUDA configurations, PyTorch's JIT compilation of these special functions fails with NVRTC errors. We implement a custom autograd function, \texttt{SafeLgamma}, that moves the lgamma/digamma operations to CPU and transfers results back to GPU, ensuring numerical correctness across all hardware configurations.
+
+\subsubsection{NaN Protection}
+Large policy loss weights or extreme Beta distribution parameters can occasionally produce NaN losses during early training. Two guards are applied: (i)~any NaN or Inf loss triggers a batch skip (the backward pass and optimiser step are not executed), and (ii)~prediction scores containing NaN values are replaced with 0.5 before metric computation to prevent evaluation crashes.
+
+\subsubsection{Jaccard Distance Caching}
+The structural Jaccard distance in the multi-view distance (Equation~34) requires set intersection and union operations for each node-neighbour pair. Since Jaccard distance is symmetric ($d(v,u) = d(u,v)$) and the graph structure is static, we cache computed distances in a dictionary keyed by $(\min(v,u), \max(v,u), r)$, reducing the computational cost of repeated evaluations.
+
 \subsection{LLM Prior Warm-Starting}
 
 To accelerate policy convergence, CAPN optionally incorporates pre-generated domain priors from a large language model (LLM). For each relation, two scores are provided: an \textit{importance} score reflecting the relation's informativeness for fraud detection, and a \textit{camouflage risk} score estimating the susceptibility of the relation to camouflage manipulation. These priors are used in two ways:
@@ -676,10 +721,206 @@ Enhanced label predictor dropout & 0.3 \\
 Beta distribution offset & 0.5 \\
 GNN optimiser & Adam (lr = \( 1 \times 10^{-2} \)) \\
 Policy optimiser & Adam (lr = \( 1 \times 10^{-3} \)) \\
+GNN gradient clipping & 1.0 \\
+Policy gradient clipping & 5.0 \\
 \hline
 \end{tabular}
 \caption{Hyperparameters for the CAPN extension.}
 \end{table}
+
+
+\section{Ablation Study Design}
+\label{sec:ablation}
+
+To systematically evaluate each component of CAPN, we design six ablation studies that isolate individual design decisions while holding all other hyperparameters constant. All studies are evaluated on both the Amazon and Yelp datasets.
+
+\subsection{Study A1: CAPN vs Original RL}
+
+The central experiment compares the full CAPN system against CARE-GNN with its original heuristic RL module. This measures the aggregate effect of all CAPN components: the learned policy network, the MLP label predictor, multi-view distance, and shaped reward.
+
+\subsection{Study A2: Label Predictor Isolation}
+
+This study disentangles the contribution of the enhanced MLP label predictor from the policy network by comparing three configurations:
+\begin{enumerate}
+    \item \textbf{Linear predictor}: Original CARE-GNN with \texttt{nn.Linear(D, 2)} classifier.
+    \item \textbf{MLP predictor (no policy)}: CARE-GNN with the two-layer MLP label predictor but the original heuristic RL. This isolates the classifier improvement.
+    \item \textbf{MLP predictor + policy (CAPN)}: Full CAPN. The difference between this and configuration~2 measures the policy network's incremental contribution.
+\end{enumerate}
+
+\subsection{Study A3: Reward Shaping}
+
+This study evaluates whether the three-component shaped reward improves over the original binary reward, and which component contributes most:
+\begin{itemize}
+    \item \textbf{Binary reward}: Original RL ($\pm 1$ based on distance change).
+    \item \textbf{Shaped reward}: Full CAPN reward ($w_1 = 0.5, w_2 = 0.3, w_3 = 0.2$).
+    \item \textbf{Distance only}: $w_1 = 1.0, w_2 = 0, w_3 = 0$. Tests filtering quality in isolation.
+    \item \textbf{Accuracy only}: $w_1 = 0, w_2 = 1.0, w_3 = 0$. Tests task-level signal in isolation.
+\end{itemize}
+
+\subsection{Study A4: LLM Prior Initialisation}
+
+Evaluates whether LLM-derived priors for policy network bias initialisation and multi-view distance mixing parameters accelerate convergence or improve final performance, comparing CAPN with and without priors.
+
+\subsection{Study A5: Policy Loss Weight Sensitivity}
+
+A sensitivity analysis over $\lambda_\pi \in \{0.01, 0.05, 0.1, 0.5\}$, testing the robustness of CAPN to the balance between supervised GNN loss and the REINFORCE policy gradient loss.
+
+\subsection{Study A6: LLM Semantic State Enrichment}
+
+Evaluates whether augmenting the policy state vector with projected sentence-transformer embeddings of node relational profiles improves threshold decisions. The base state has dimension $D + 5$; the enriched state adds 16 dimensions from a learned projector ($384 \to 64 \to 16$) applied to pre-computed sentence embeddings of each node's structural statistics.
+
+
+\section{Experimental Results (Amazon)}
+\label{sec:results}
+
+We report experimental results on the Amazon dataset. All experiments use 31 training epochs with the hyperparameters specified in the preceding sections. Results report the best epoch by validation AUC-ROC. Yelp results are pending completion.
+
+\subsection{A1: CAPN vs Original RL}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+Method & AUC-ROC & AP & F1 & Precision & Recall & Label F1 \\
+\midrule
+CARE-GNN & 0.9398 & 0.8535 & \textbf{0.9011} & \textbf{0.9118} & 0.8925 & 0.7215 \\
+CAPN & \textbf{0.9445} & \textbf{0.8568} & 0.8994 & 0.9074 & \textbf{0.8938} & \textbf{0.8935} \\
+\bottomrule
+\end{tabular}
+\caption{CAPN vs CARE-GNN on Amazon. CAPN improves AUC-ROC by +0.47pp and AP by +0.33pp. The MLP label predictor achieves +17.2pp F1 over the linear baseline.}
+\label{tab:capn-main}
+\end{table}
+
+\noindent
+CAPN outperforms CARE-GNN on the primary ranking metrics (AUC-ROC and AP), demonstrating that the learned policy network produces better filtering decisions than the heuristic RL. The MLP label predictor achieves dramatically higher label F1 (0.8935 vs.\ 0.7215), confirming that non-linear feature-label relationships are important for this dataset.
+
+\subsection{A2: Label Predictor Isolation}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Configuration & GNN AUC & GNN AP & Label AUC \\
+\midrule
+Linear predictor (CARE-GNN) & \textbf{0.9398} & \textbf{0.8535} & 0.8786 \\
+MLP predictor (no policy) & 0.9321 & 0.8454 & \textbf{0.9312} \\
+MLP + policy (CAPN) & 0.9445 & 0.8568 & 0.9306 \\
+\bottomrule
+\end{tabular}
+\caption{Label predictor ablation on Amazon.}
+\label{tab:capn-label}
+\end{table}
+
+\noindent
+The MLP predictor alone \emph{hurts} GNN AUC ($-0.77$pp vs.\ linear) because the stronger classifier changes the distance landscape that the heuristic RL was designed for, destabilising the fixed-threshold mechanism. However, adding the policy network not only recovers but \emph{exceeds} the original performance (+1.24pp over MLP-only, +0.47pp over linear baseline). This demonstrates that the policy network is essential: it adapts to the new distance distribution created by the MLP predictor, producing per-node thresholds that the heuristic cannot match.
+
+\subsection{A3: Reward Shaping}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Reward & GNN AUC & GNN AP & GNN F1 \\
+\midrule
+Binary (CARE-GNN) & 0.9398 & 0.8535 & \textbf{0.9011} \\
+Shaped (combined) & \textbf{0.9445} & 0.8568 & 0.8994 \\
+Distance only & 0.9443 & 0.8567 & 0.8933 \\
+Accuracy only & 0.9445 & \textbf{0.8572} & 0.8938 \\
+\bottomrule
+\end{tabular}
+\caption{Reward shaping ablation on Amazon.}
+\label{tab:capn-reward}
+\end{table}
+
+\noindent
+All CAPN reward variants outperform the binary reward baseline on AUC and AP, but the three reward configurations (combined, distance-only, accuracy-only) produce nearly identical results (AUC range: 0.0002). On this dataset, the reward composition has minimal differential effect---the policy network benefits from any continuous reward signal, regardless of its specific composition.
+
+\subsection{A4: LLM Prior Initialisation}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Configuration & GNN AUC & GNN AP & GNN F1 & GNN Precision \\
+\midrule
+CAPN (no priors) & 0.9445 & 0.8568 & 0.8994 & 0.9074 \\
+CAPN (LLM priors) & \textbf{0.9453} & \textbf{0.8587} & \textbf{0.9038} & \textbf{0.9155} \\
+\bottomrule
+\end{tabular}
+\caption{LLM prior initialisation on Amazon.}
+\label{tab:capn-llm}
+\end{table}
+
+\noindent
+LLM priors provide small but consistent improvements across all metrics: +0.08pp AUC, +0.19pp AP, +0.44pp F1, and +0.81pp precision. The priors help most with precision, suggesting that the LLM correctly identified which relations are more susceptible to camouflage, enabling more targeted initial filtering.
+
+\subsection{A5: Policy Loss Weight Sensitivity}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lccc}
+\toprule
+$\lambda_\pi$ & GNN AUC & GNN AP & GNN F1 \\
+\midrule
+0.01 & 0.9441 & 0.8568 & 0.8971 \\
+0.05 & 0.9445 & 0.8568 & 0.8999 \\
+\textbf{0.10} & \textbf{0.9445} & \textbf{0.8568} & 0.8994 \\
+0.50 & 0.9444 & 0.8567 & 0.8994 \\
+\bottomrule
+\end{tabular}
+\caption{Policy loss weight sensitivity on Amazon.}
+\label{tab:capn-lambda}
+\end{table}
+
+\noindent
+CAPN is highly robust to the policy loss weight: AUC varies by only 0.0004 across a 50$\times$ range of $\lambda_\pi$ values (0.01 to 0.5). This indicates that the policy network converges to similar filtering behaviour regardless of the gradient magnitude, likely because the separate gradient clipping (Section~6.8.1) effectively normalises the policy update scale.
+
+\subsection{A6: LLM Semantic State Enrichment}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Configuration & GNN AUC & GNN AP & Label AUC \\
+\midrule
+CAPN (base state, dim=$D{+}5$) & \textbf{0.9445} & 0.8568 & 0.9306 \\
+CAPN (LLM state, dim=$D{+}21$) & 0.9426 & \textbf{0.8574} & \textbf{0.9320} \\
+\bottomrule
+\end{tabular}
+\caption{LLM semantic state enrichment on Amazon.}
+\label{tab:capn-llm-state}
+\end{table}
+
+\noindent
+LLM semantic state enrichment shows minimal effect ($-0.19$pp AUC, $+0.06$pp AP). The current pipeline computes node relational statistics (degrees, disagreement, overlap), converts them to natural language descriptions via templates, encodes them with a sentence-transformer, and projects the embeddings into the policy state. Analysis reveals that this is a lossy round-trip: the sentence-transformer re-encodes numerical statistics already present in the base state through a text bottleneck, adding no genuinely novel information. Future work on this component should focus on incorporating signals that are \emph{not} already captured by the base state vector, such as higher-order neighbourhood patterns or cross-relation position divergence.
+
+\subsection{Summary of Findings}
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+Configuration & GNN AUC & GNN AP & GNN F1 & Label F1 \\
+\midrule
+CARE-GNN (original RL) & 0.9398 & 0.8535 & \textbf{0.9011} & 0.7215 \\
+CAPN (default) & 0.9445 & 0.8568 & 0.8994 & 0.8935 \\
+\textbf{CAPN + LLM priors} & \textbf{0.9453} & \textbf{0.8587} & 0.9038 & \textbf{0.8935} \\
+CAPN + LLM state & 0.9426 & 0.8574 & 0.8987 & 0.8945 \\
+\bottomrule
+\end{tabular}
+\caption{Summary of best configurations on Amazon. Bold indicates best per column.}
+\label{tab:summary}
+\end{table}
+
+\noindent
+Key findings from the Amazon evaluation:
+\begin{enumerate}
+    \item \textbf{CAPN improves over CARE-GNN} on the primary ranking metrics (+0.47pp AUC, +0.33pp AP), validating the learned policy approach.
+    \item \textbf{The policy network is essential}, not just the MLP predictor. The MLP alone hurts GNN performance; the policy network recovers and surpasses the baseline.
+    \item \textbf{LLM priors provide small but consistent gains}, with the best overall configuration being CAPN + LLM priors (AUC 0.9453).
+    \item \textbf{CAPN is robust to hyperparameter choice}: the policy loss weight $\lambda_\pi$ can vary 50$\times$ with negligible impact.
+    \item \textbf{LLM semantic state enrichment is neutral} in its current form, motivating future work on non-redundant feature engineering for the policy state.
+\end{enumerate}
 
 
 \clearpage
