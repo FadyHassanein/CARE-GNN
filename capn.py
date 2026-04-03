@@ -53,28 +53,14 @@ class EnhancedLabelPredictor(nn.Module):
         """
         return self.mlp(features)
 
-    def confidence(self, scores):
-        """
-        Compute prediction confidence from label scores.
-        Uses normalized negative entropy: conf = 1 - H(softmax(s)) / log(num_classes)
-
-        :param scores: raw logits [batch_size, num_classes]
-        :return conf: confidence values [batch_size, 1] in [0, 1]
-        """
-        probs = F.softmax(scores, dim=1)
-        log_probs = F.log_softmax(scores, dim=1)
-        entropy = -(probs * log_probs).sum(dim=1, keepdim=True)
-        max_entropy = math.log(scores.size(1))
-        confidence = 1.0 - entropy / max_entropy
-        return confidence
-
-
 class StateConstructor:
     """
     Constructs state vectors for the policy network.
 
     For each node v in relation r, the state is:
         s_v^r = [x_v, conf_v, deg_r(v), mean_dist_r(v), overlap_r(v), feat_var_r(v)]
+    or with LLM enrichment:
+        s_v^r = [x_v, conf_v, deg_r(v), mean_dist_r(v), overlap_r(v), feat_var_r(v), e_LLM(v)]
 
     Where:
     - x_v: node features (feat_dim)
@@ -83,20 +69,26 @@ class StateConstructor:
     - mean_dist_r(v): average L1 distance to neighbors (1)
     - overlap_r(v): Jaccard overlap with homogeneous graph (1)
     - feat_var_r(v): mean feature variance of neighbors (1)
+    - e_LLM(v): projected LLM semantic embedding (projection_dim, optional)
     """
 
-    def __init__(self, adj_lists, homo_adj, features, device=None):
+    def __init__(self, adj_lists, homo_adj, features, device=None,
+                 llm_embeddings=None, llm_projector=None):
         """
         :param adj_lists: list of adjacency lists for each relation
         :param homo_adj: homogeneous graph adjacency list (for structural overlap)
         :param features: nn.Embedding for node features
         :param device: torch device
+        :param llm_embeddings: precomputed LLM semantic embeddings [N, 384] (optional)
+        :param llm_projector: LLMProjector module (optional, required if llm_embeddings given)
         """
         self.adj_lists = adj_lists
         self.homo_adj = homo_adj
         self.features = features
         self.device = device or torch.device('cpu')
         self.num_relations = len(adj_lists)
+        self.llm_embeddings = llm_embeddings
+        self.llm_projector = llm_projector
 
         # precompute max degree per relation for normalization
         self.max_degrees = []
@@ -118,8 +110,8 @@ class StateConstructor:
         batch_size = len(nodes)
         adj_list = self.adj_lists[relation_idx]
 
-        # get node features
-        node_features = self.features(torch.LongTensor(nodes).to(self.device))
+        # get node features (detached — policy gradients should not flow into features)
+        node_features = self.features(torch.LongTensor(nodes).to(self.device)).detach()
 
         # confidence from label predictor (requires EnhancedLabelPredictor)
         # clamp scores to prevent extreme softmax values that cause 0 * -inf = NaN
@@ -167,14 +159,23 @@ class StateConstructor:
                 feat_vars[i] = neigh_feats.var(dim=0).mean()
 
         # concatenate all state components: [x_v, conf, deg, mean_dist, overlap, feat_var]
-        state = torch.cat([
+        components = [
             node_features,     # [batch, feat_dim]
             confidence,        # [batch, 1]
             degrees,           # [batch, 1]
             mean_dists,        # [batch, 1]
             overlaps,          # [batch, 1]
             feat_vars,         # [batch, 1]
-        ], dim=1)
+        ]
+
+        # LLM semantic embedding projection (optional)
+        if self.llm_embeddings is not None and self.llm_projector is not None:
+            node_indices = torch.LongTensor(nodes).to(self.llm_embeddings.device)
+            llm_raw = self.llm_embeddings[node_indices]          # [batch, 384]
+            llm_proj = self.llm_projector(llm_raw.to(self.device))  # [batch, projection_dim]
+            components.append(llm_proj)
+
+        state = torch.cat(components, dim=1)
 
         # replace any remaining NaN with 0 to prevent downstream crashes
         state = torch.nan_to_num(state, nan=0.0)
@@ -302,9 +303,7 @@ class PolicyNetwork(nn.Module):
             # log_prob via SafeLgamma — gradients flow through alpha/beta
             log_probs = _beta_log_prob(alpha, beta, t_sampled)
 
-            # straight-through estimator for thresholds
-            thresholds = alpha / (alpha + beta)
-            thresholds = thresholds + (t_sampled - thresholds).detach()
+            thresholds = t_sampled
 
         return thresholds, log_probs
 
@@ -328,7 +327,7 @@ class PolicyNetwork(nn.Module):
         :return loss: policy gradient loss
         """
         if not self._log_probs:
-            return torch.tensor(0.0)
+            return torch.tensor(0.0, device=next(self.parameters()).device)
 
         # sum log probs across relations
         total_log_prob = torch.stack([lp.mean() for lp in self._log_probs]).sum()
@@ -405,6 +404,10 @@ class ShapedRewardComputer:
         self.prev_avg_dist = None
         self.reward_log = []
 
+    def reset_epoch(self):
+        """Reset distance tracking at epoch boundary (preserves EMA baseline)."""
+        self.prev_avg_dist = None
+
 
 class LLMPriorLoader:
     """
@@ -462,6 +465,24 @@ class MultiViewDistance:
             self.gammas = gamma_init
         else:
             self.gammas = [gamma_init] * num_relations
+        # Cache structural Jaccard distances (graph is static)
+        self._jaccard_cache = {}
+
+    def _get_struct_dist(self, center_node, neigh_id, relation_idx):
+        """Cached structural Jaccard distance for a node pair."""
+        key = (center_node, neigh_id, relation_idx)
+        if key in self._jaccard_cache:
+            return self._jaccard_cache[key]
+        adj_list = self.adj_lists[relation_idx]
+        center_neighs = adj_list.get(center_node, set())
+        neigh_neighs = adj_list.get(neigh_id, set())
+        if len(center_neighs) > 0 or len(neigh_neighs) > 0:
+            jaccard = len(center_neighs & neigh_neighs) / max(len(center_neighs | neigh_neighs), 1)
+        else:
+            jaccard = 0.0
+        dist = 1.0 - jaccard
+        self._jaccard_cache[key] = dist
+        return dist
 
     def compute_distance(self, center_score, neigh_scores, neighs_indices,
                          center_node, relation_idx):
@@ -482,18 +503,11 @@ class MultiViewDistance:
         if label_dist.dim() == 0:
             label_dist = label_dist.unsqueeze(0)
 
-        # structural Jaccard distance
+        # structural Jaccard distance (cached)
         if self.adj_lists is not None:
-            adj_list = self.adj_lists[relation_idx]
-            center_neighs = set(adj_list.get(int(center_node), set()))
-            struct_dists = []
-            for neigh_id in neighs_indices:
-                neigh_neighs = set(adj_list.get(int(neigh_id), set()))
-                if len(center_neighs) > 0 or len(neigh_neighs) > 0:
-                    jaccard = len(center_neighs & neigh_neighs) / max(len(center_neighs | neigh_neighs), 1)
-                else:
-                    jaccard = 0.0
-                struct_dists.append(1.0 - jaccard)
+            center_node_int = int(center_node)
+            struct_dists = [self._get_struct_dist(center_node_int, int(n), relation_idx)
+                           for n in neighs_indices]
             struct_dist = torch.tensor(struct_dists, device=label_dist.device, dtype=label_dist.dtype)
         else:
             struct_dist = torch.zeros_like(label_dist)

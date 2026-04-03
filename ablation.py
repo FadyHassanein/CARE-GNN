@@ -1,9 +1,11 @@
 import argparse
+import inspect
 import json
 import logging
 import os
 import sys
 import time
+import traceback
 
 from train import train, setup_logging, parse_args
 
@@ -65,8 +67,9 @@ def run_ablation(base_args, experiments, output_dir='results/ablation'):
                 logger.info(f'Best GNN AUC: {best_metrics.get("gnn_auc", "N/A")}')
 
         except Exception as e:
-            logger.error(f'Experiment {exp_name} failed: {e}')
-            all_results[exp_name] = {'error': str(e)}
+            tb = traceback.format_exc()
+            logger.error(f'Experiment {exp_name} failed: {e}\n{tb}')
+            all_results[exp_name] = {'error': str(e) or repr(e), 'traceback': tb}
 
         # restore the name for results
         exp['name'] = exp_name
@@ -127,10 +130,11 @@ def get_capn_full_experiments():
 
 
 def get_capn_label_predictor_experiments():
-    """A2: Enhanced vs linear label predictor."""
+    """A2: Isolate label predictor effect from policy network."""
     return [
-        {'name': 'Linear label predictor', 'model': 'CARE', 'use_capn': False},
-        {'name': 'MLP label predictor (CAPN)', 'model': 'CARE', 'use_capn': True},
+        {'name': 'Linear predictor (CARE-GNN)', 'model': 'CARE', 'use_capn': False, 'use_mlp_label': False},
+        {'name': 'MLP predictor (no policy)', 'model': 'CARE', 'use_capn': False, 'use_mlp_label': True},
+        {'name': 'MLP predictor + policy (CAPN)', 'model': 'CARE', 'use_capn': True},
     ]
 
 
@@ -146,12 +150,12 @@ def get_capn_reward_experiments():
     ]
 
 
-def get_capn_llm_prior_experiments():
+def get_capn_llm_prior_experiments(dataset='yelp'):
     """A6: With vs without LLM priors."""
     return [
         {'name': 'CAPN (no priors)', 'model': 'CARE', 'use_capn': True, 'llm_priors_file': ''},
         {'name': 'CAPN (LLM priors)', 'model': 'CARE', 'use_capn': True,
-         'llm_priors_file': 'data/llm_priors/yelp_priors.json'},
+         'llm_priors_file': f'data/llm_priors/{dataset}_priors.json'},
     ]
 
 
@@ -165,6 +169,27 @@ def get_capn_lambda_experiments():
     ]
 
 
+def get_capn_llm_state_experiments():
+    """A7: LLM semantic state enrichment — with vs without LLM embeddings in policy state."""
+    return [
+        {'name': 'CAPN (base state)', 'model': 'CARE', 'use_capn': True, 'use_llm_state': False},
+        {'name': 'CAPN (LLM state)', 'model': 'CARE', 'use_capn': True, 'use_llm_state': True},
+    ]
+
+
+def run_studies(base_args, study_names, studies, output_dir, dataset='yelp'):
+    """Run a list of studies with given base args."""
+    for study_name in study_names:
+        logger.info(f'\n\nStarting study: {study_name}')
+        gen_fn = studies[study_name]
+        # pass dataset to generators that need it
+        if 'dataset' in inspect.signature(gen_fn).parameters:
+            experiments = gen_fn(dataset=dataset)
+        else:
+            experiments = gen_fn()
+        run_ablation(base_args, experiments, os.path.join(output_dir, study_name))
+
+
 if __name__ == '__main__':
     setup_logging()
 
@@ -172,19 +197,16 @@ if __name__ == '__main__':
     parser.add_argument('--study', type=str, required=True,
                         choices=['inter', 'loss', 'layers', 'baseline',
                                  'capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda',
+                                 'capn_llm_state',
                                  'all', 'all_capn'],
                         help='Which ablation study to run')
-    parser.add_argument('--data', type=str, default='yelp', help='Dataset')
+    parser.add_argument('--data', type=str, default='yelp',
+                        help='Dataset: yelp, amazon, or both')
     parser.add_argument('--num-epochs', type=int, default=31, help='Epochs per experiment')
     parser.add_argument('--output-dir', type=str, default='results/ablation', help='Output directory')
 
     ab_args = parser.parse_args()
 
-    # get base args for training
-    sys.argv = ['train.py', '--data', ab_args.data, '--num-epochs', str(ab_args.num_epochs)]
-    base_args = parse_args()
-
-    # select experiments
     studies = {
         'inter': get_inter_aggregator_experiments,
         'loss': get_loss_function_experiments,
@@ -195,20 +217,34 @@ if __name__ == '__main__':
         'capn_reward': get_capn_reward_experiments,
         'capn_llm': get_capn_llm_prior_experiments,
         'capn_lambda': get_capn_lambda_experiments,
+        'capn_llm_state': get_capn_llm_state_experiments,
     }
 
-    capn_studies = ['capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda']
+    capn_studies = ['capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda', 'capn_llm_state']
 
+    # determine which studies to run
     if ab_args.study == 'all':
-        for study_name, study_fn in studies.items():
-            logger.info(f'\n\nStarting study: {study_name}')
-            experiments = study_fn()
-            run_ablation(base_args, experiments, os.path.join(ab_args.output_dir, study_name))
+        study_list = list(studies.keys())
     elif ab_args.study == 'all_capn':
-        for study_name in capn_studies:
-            logger.info(f'\n\nStarting study: {study_name}')
-            experiments = studies[study_name]()
-            run_ablation(base_args, experiments, os.path.join(ab_args.output_dir, study_name))
+        study_list = capn_studies
     else:
-        experiments = studies[ab_args.study]()
-        run_ablation(base_args, experiments, ab_args.output_dir)
+        study_list = [ab_args.study]
+
+    # determine which datasets to run on
+    if ab_args.data == 'both':
+        datasets = ['amazon', 'yelp']
+    else:
+        datasets = [ab_args.data]
+
+    for dataset in datasets:
+        logger.info(f'\n{"#"*60}')
+        logger.info(f'Dataset: {dataset}')
+        logger.info(f'{"#"*60}')
+
+        sys.argv = ['train.py', '--data', dataset, '--num-epochs', str(ab_args.num_epochs)]
+        if dataset == 'amazon':
+            sys.argv += ['--batch-size', '256']
+        base_args = parse_args()
+
+        output_dir = os.path.join(ab_args.output_dir, dataset) if len(datasets) > 1 else ab_args.output_dir
+        run_studies(base_args, study_list, studies, output_dir, dataset=dataset)

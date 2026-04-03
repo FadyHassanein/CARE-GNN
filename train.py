@@ -17,6 +17,7 @@ from layers import InterAgg, IntraAgg
 from graphsage import GraphSage, MeanAggregator, Encoder
 from capn import (EnhancedLabelPredictor, StateConstructor, PolicyNetwork,
                   ShapedRewardComputer, LLMPriorLoader, MultiViewDistance)
+from llm.projector import LLMProjector
 from config import CareConfig
 
 """
@@ -114,14 +115,32 @@ def parse_args():
     parser.add_argument('--reward-w2', type=float, default=0.3, help='Shaped reward: accuracy signal weight.')
     parser.add_argument('--reward-w3', type=float, default=0.2, help='Shaped reward: regularization weight.')
     parser.add_argument('--gamma-init', type=float, default=0.7, help='Initial gamma for multi-view distance.')
+    parser.add_argument('--policy-grad-clip', type=float, default=5.0, help='Gradient clipping max norm for policy network.')
     parser.add_argument('--llm-priors-file', type=str, default='', help='Path to LLM-generated priors JSON file.')
+
+    # label predictor
+    parser.add_argument('--use-mlp-label', action='store_true', default=False, help='Use MLP label predictor without full CAPN policy network.')
+
+    # LLM semantic state enrichment
+    parser.add_argument('--use-llm-state', action='store_true', default=False, help='Enable LLM semantic state enrichment for CAPN.')
+    parser.add_argument('--llm-embedding-path', type=str, default=None, help='Path to LLM embeddings (default: llm_embeddings/{data}/llm_semantic_embeddings.pt).')
+    parser.add_argument('--llm-projection-dim', type=int, default=16, help='LLM embedding projection dimension.')
 
     return parser.parse_args()
 
 
-def get_loss_fn(loss_type, labels=None):
-    """Get loss function by name."""
+def get_loss_fn(loss_type, labels=None, under_sample=1):
+    """Get loss function by name.
+    :param under_sample: when > 0, under-sampling already balances classes so skip auto-weighting
+    """
     if loss_type == 'ce':
+        if labels is not None and under_sample <= 0:
+            # only apply class weights when NOT under-sampling (avoids double correction)
+            labels_arr = np.array(labels).astype(int)
+            class_counts = np.bincount(labels_arr)
+            weights = len(labels_arr) / (len(class_counts) * class_counts.astype(float))
+            logger.info(f'CE loss class weights: {weights.tolist()}')
+            return nn.CrossEntropyLoss(weight=torch.FloatTensor(weights))
         return nn.CrossEntropyLoss()
     elif loss_type == 'focal':
         from losses import FocalLoss
@@ -175,7 +194,7 @@ def train(args):
     train_pos, train_neg = pos_neg_split(idx_train, y_train)
 
     # get loss function
-    loss_fn = get_loss_fn(args.loss, labels=y_train)
+    loss_fn = get_loss_fn(args.loss, labels=y_train, under_sample=args.under_sample)
 
     # initialize model input
     features = nn.Embedding(feat_data.shape[0], feat_data.shape[1])
@@ -198,24 +217,53 @@ def train(args):
     multi_view_distance = None
     reward_computer = None
 
+    llm_projector = None  # track for optimizer integration
+
+    # MLP label predictor (used by CAPN or standalone with --use-mlp-label)
+    if (args.use_capn or args.use_mlp_label) and args.model in ('CARE',):
+        enhanced_label_clf = EnhancedLabelPredictor(feat_data.shape[1]).to(device)
+        logger.info(f'Using MLP label predictor (hidden={feat_data.shape[1]//2})')
+
     if args.use_capn and args.model in ('CARE',):
         # load LLM priors if available
         llm_loader = LLMPriorLoader(args.llm_priors_file if args.llm_priors_file else None)
         relation_biases = llm_loader.get_relation_biases()
         gamma_inits = llm_loader.get_gamma_init()
 
-        # enhanced label predictor
-        enhanced_label_clf = EnhancedLabelPredictor(feat_data.shape[1]).to(device)
+        # LLM semantic state enrichment (optional)
+        llm_embeddings = None
+        if args.use_llm_state:
+            if args.llm_embedding_path is None:
+                args.llm_embedding_path = f'llm_embeddings/{args.data}/llm_semantic_embeddings.pt'
+            if not os.path.exists(args.llm_embedding_path):
+                raise FileNotFoundError(
+                    f'LLM embeddings not found at {args.llm_embedding_path}. '
+                    f'Run the preprocessing pipeline first:\n'
+                    f'  python -m llm.compute_node_statistics --data {args.data}\n'
+                    f'  python -m llm.generate_descriptions --mode template --data {args.data}\n'
+                    f'  python -m llm.encode_embeddings --data {args.data}')
+            llm_embeddings = torch.load(args.llm_embedding_path, weights_only=True).to(device)
+            llm_input_dim = llm_embeddings.shape[1]
+            llm_projector = LLMProjector(
+                input_dim=llm_input_dim,
+                projection_dim=args.llm_projection_dim).to(device)
+            logger.info(f'LLM state enrichment: embeddings {llm_embeddings.shape}, '
+                        f'projection {llm_input_dim} -> {args.llm_projection_dim}')
 
         # state constructor
-        state_constructor = StateConstructor(adj_lists, homo, features, device=device)
+        state_constructor = StateConstructor(
+            adj_lists, homo, features, device=device,
+            llm_embeddings=llm_embeddings, llm_projector=llm_projector)
 
-        # policy network
+        # policy network (state_dim adjusts based on LLM enrichment)
         state_dim = feat_data.shape[1] + 5
+        if args.use_llm_state:
+            state_dim += args.llm_projection_dim
         policy_network = PolicyNetwork(
             state_dim, hidden_dim=args.policy_hidden,
             num_relations=len(adj_lists),
             relation_biases=relation_biases).to(device)
+        logger.info(f'Policy network state_dim={state_dim}')
 
         # multi-view distance
         gamma_init = gamma_inits if gamma_inits else args.gamma_init
@@ -266,11 +314,17 @@ def train(args):
         # dual optimizer: separate LR for policy network
         gnn_params = [p for n, p in gnn_model.named_parameters()
                       if p.requires_grad and 'policy_network' not in n]
-        policy_params = list(policy_network.parameters())
+        policy_param_groups = [
+            {'params': list(policy_network.parameters()), 'lr': args.policy_lr},
+        ]
+        if llm_projector is not None:
+            policy_param_groups.append(
+                {'params': list(llm_projector.parameters()), 'lr': args.policy_lr})
         optimizer = torch.optim.Adam(gnn_params, lr=args.lr, weight_decay=args.lambda_2)
-        policy_optimizer = torch.optim.Adam(policy_params, lr=args.policy_lr)
+        policy_optimizer = torch.optim.Adam(policy_param_groups)
+        all_policy_params = [p for pg in policy_param_groups for p in pg['params']]
         logger.info(f'Dual optimizer: GNN params={sum(p.numel() for p in gnn_params)}, '
-                    f'Policy params={sum(p.numel() for p in policy_params)}')
+                    f'Policy params={sum(p.numel() for p in all_policy_params)}')
     else:
         optimizer = torch.optim.Adam(
             filter(lambda p: p.requires_grad, gnn_model.parameters()),
@@ -293,6 +347,10 @@ def train(args):
     # train the model
     for epoch in range(args.num_epochs):
         gnn_model.train()
+
+        # reset reward computer distance tracking for new epoch
+        if reward_computer is not None:
+            reward_computer.reset_epoch()
 
         # randomly under-sampling negative nodes for each epoch
         sampled_idx_train = undersample(train_pos, train_neg, scale=args.under_sample)
@@ -321,10 +379,27 @@ def train(args):
             if policy_optimizer is not None:
                 policy_optimizer.zero_grad()
             loss = gnn_model.loss(batch_nodes, torch.LongTensor(batch_label).to(device))
+
+            # skip NaN/Inf loss to prevent weight corruption
+            if torch.isnan(loss) or torch.isinf(loss):
+                logger.warning(f'Epoch {epoch}, batch {batch}: NaN/Inf loss detected, skipping update')
+                end_time = time.time()
+                epoch_time += end_time - start_time
+                continue
+
             loss.backward()
 
-            # gradient clipping
-            torch.nn.utils.clip_grad_norm_(gnn_model.parameters(), args.grad_clip)
+            # gradient clipping (separate thresholds for GNN vs policy)
+            if args.use_capn and policy_optimizer is not None:
+                gnn_clip_params = [p for n, p in gnn_model.named_parameters()
+                                   if p.requires_grad and 'policy_network' not in n]
+                torch.nn.utils.clip_grad_norm_(gnn_clip_params, args.grad_clip)
+                policy_clip_params = list(policy_network.parameters())
+                if llm_projector is not None:
+                    policy_clip_params += list(llm_projector.parameters())
+                torch.nn.utils.clip_grad_norm_(policy_clip_params, args.policy_grad_clip)
+            else:
+                torch.nn.utils.clip_grad_norm_(gnn_model.parameters(), args.grad_clip)
 
             optimizer.step()
             if policy_optimizer is not None:
@@ -342,13 +417,11 @@ def train(args):
             with torch.no_grad():
                 if args.model == 'SAGE':
                     metrics = test_sage(idx_test, y_test, gnn_model, args.batch_size, device=device)
-                    val_metric = metrics['auc']
                 else:
                     metrics = test_care(idx_test, y_test, gnn_model, args.batch_size, device=device)
-                    val_metric = metrics['gnn_auc']
                     performance_log.append(metrics)
 
-                # validation set evaluation
+                # model selection metric
                 if args.use_validation and idx_val is not None:
                     if args.model == 'SAGE':
                         val_metrics = test_sage(idx_val, y_val, gnn_model, args.batch_size, device=device)
@@ -357,6 +430,9 @@ def train(args):
                         val_metrics = test_care(idx_val, y_val, gnn_model, args.batch_size, device=device)
                         val_metric = val_metrics['gnn_auc']
                     logger.info(f'Validation AUC: {val_metric:.4f}')
+                else:
+                    # no validation set: use training loss to avoid test data leakage
+                    val_metric = -epoch_loss / num_batches
 
                 # learning rate scheduling
                 if scheduler is not None:

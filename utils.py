@@ -250,10 +250,21 @@ def test_care(test_cases, labels, model, batch_size, device=None):
         all_preds_label.extend(label_preds.tolist())
         all_labels.extend(batch_label.tolist() if hasattr(batch_label, 'tolist') else list(batch_label))
 
-    auc_gnn = roc_auc_score(labels, np.array(gnn_list))
-    ap_gnn = average_precision_score(labels, np.array(gnn_list))
-    auc_label = roc_auc_score(labels, np.array(label_list))
-    ap_label = average_precision_score(labels, np.array(label_list))
+    gnn_scores = np.array(gnn_list)
+    label_scores_arr = np.array(label_list)
+
+    # replace NaN/Inf with 0.5 to prevent roc_auc_score crashes
+    if np.any(~np.isfinite(gnn_scores)):
+        logger.warning(f'GNN scores contain {np.sum(~np.isfinite(gnn_scores))} NaN/Inf values, replacing with 0.5')
+        gnn_scores = np.where(np.isfinite(gnn_scores), gnn_scores, 0.5)
+    if np.any(~np.isfinite(label_scores_arr)):
+        logger.warning(f'Label scores contain {np.sum(~np.isfinite(label_scores_arr))} NaN/Inf values, replacing with 0.5')
+        label_scores_arr = np.where(np.isfinite(label_scores_arr), label_scores_arr, 0.5)
+
+    auc_gnn = roc_auc_score(labels, gnn_scores)
+    ap_gnn = average_precision_score(labels, gnn_scores)
+    auc_label = roc_auc_score(labels, label_scores_arr)
+    ap_label = average_precision_score(labels, label_scores_arr)
 
     metrics = {
         'gnn_f1': f1_gnn / test_batch_num,

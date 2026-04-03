@@ -117,7 +117,7 @@ class InterAgg(nn.Module):
         # CAPN: store per-batch policy outputs for loss computation
         self._capn_log_probs = []
         self._capn_thresholds = []
-        self._capn_avg_dists = []
+        self._capn_avg_dist = 0.0
 
     def forward(self, nodes, labels, train_flag=True):
         """
@@ -199,7 +199,9 @@ class InterAgg(nn.Module):
         r_scores_out = []
         for r_idx in range(self.num_relations):
             r_feats, r_samp_scores = self.intra_aggs[r_idx].forward(
-                nodes, r_lists[r_idx], center_scores, r_scores[r_idx], r_sample_num_lists[r_idx])
+                nodes, r_lists[r_idx], center_scores, r_scores[r_idx], r_sample_num_lists[r_idx],
+                multi_view_distance=self.multi_view_distance if self.use_capn else None,
+                relation_idx=r_idx)
             r_feats_list.append(r_feats)
             r_scores_out.append(r_samp_scores)
 
@@ -215,7 +217,7 @@ class InterAgg(nn.Module):
                     elif isinstance(s, float):
                         total_dist += s
                         total_count += 1
-            self._capn_avg_dists.append(total_dist / max(total_count, 1))
+            self._capn_avg_dist = total_dist / max(total_count, 1)
 
         # concat the intra-aggregated embeddings from each relation
         neigh_feats = torch.cat(r_feats_list, dim=0)
@@ -279,9 +281,7 @@ class InterAgg(nn.Module):
 
     def get_capn_avg_dist(self):
         """Get the latest average distance for reward computation."""
-        if self._capn_avg_dists:
-            return self._capn_avg_dists[-1]
-        return 0.0
+        return self._capn_avg_dist
 
     def get_capn_thresholds(self):
         """Get the latest per-node thresholds for logging."""
@@ -309,7 +309,8 @@ class IntraAgg(nn.Module):
         else:
             self.device = torch.device('cuda' if cuda else 'cpu')
 
-    def forward(self, nodes, to_neighs_list, batch_scores, neigh_scores, sample_list):
+    def forward(self, nodes, to_neighs_list, batch_scores, neigh_scores, sample_list,
+                multi_view_distance=None, relation_idx=None):
         """
         Code partially from https://github.com/williamleif/graphsage-simple/
         :param nodes: list of nodes in a batch
@@ -317,12 +318,16 @@ class IntraAgg(nn.Module):
         :param batch_scores: the label-aware scores of batch nodes
         :param neigh_scores: the label-aware scores 1-hop neighbors each batch node in one relation
         :param sample_list: the number of neighbors kept for each batch node in one relation
+        :param multi_view_distance: optional MultiViewDistance for CAPN mode
+        :param relation_idx: relation index for multi-view distance
         :return to_feats: the aggregated embeddings of batch nodes neighbors in one relation
         :return samp_scores: the average neighbor distances for each relation after filtering
         """
 
         # filter neighbors under given relation
-        samp_neighs, samp_scores = filter_neighs_ada_threshold(batch_scores, neigh_scores, to_neighs_list, sample_list)
+        samp_neighs, samp_scores = filter_neighs_ada_threshold(
+            batch_scores, neigh_scores, to_neighs_list, sample_list,
+            multi_view_distance=multi_view_distance, center_nodes=nodes, relation_idx=relation_idx)
 
         # find the unique nodes among batch nodes and the filtered neighbors
         unique_nodes_list = list(set.union(*samp_neighs))
@@ -428,13 +433,17 @@ def RLModule(scores, scores_log, labels, thresholds, batch_num, step_size,
     return relation_scores, rewards, new_thresholds, stop_flag
 
 
-def filter_neighs_ada_threshold(center_scores, neigh_scores, neighs_list, sample_list):
+def filter_neighs_ada_threshold(center_scores, neigh_scores, neighs_list, sample_list,
+                                multi_view_distance=None, center_nodes=None, relation_idx=None):
     """
     Filter neighbors according label predictor result with adaptive thresholds
     :param center_scores: the label-aware scores of batch nodes
     :param neigh_scores: the label-aware scores 1-hop neighbors each batch node in one relation
     :param neighs_list: neighbor node id list for each batch node in one relation
     :param sample_list: the number of neighbors kept for each batch node in one relation
+    :param multi_view_distance: optional MultiViewDistance for combined L1+structural distance
+    :param center_nodes: batch node ids (required when multi_view_distance is set)
+    :param relation_idx: relation index (required when multi_view_distance is set)
     :return samp_neighs: the neighbor indices and neighbor simi scores
     :return samp_scores: the average neighbor distances for each relation after filtering
     """
@@ -444,13 +453,19 @@ def filter_neighs_ada_threshold(center_scores, neigh_scores, neighs_list, sample
     for idx, center_score in enumerate(center_scores):
         center_score = center_scores[idx][0]
         neigh_score = neigh_scores[idx][:, 0].view(-1, 1)
-        center_score = center_score.repeat(neigh_score.size()[0], 1)
         neighs_indices = neighs_list[idx]
         num_sample = sample_list[idx]
 
-        # compute the L1-distance of batch nodes and their neighbors
-        # Eq. (2) in paper
-        score_diff = torch.abs(center_score - neigh_score).squeeze()
+        if multi_view_distance is not None and center_nodes is not None:
+            # multi-view distance: L1 label distance + structural Jaccard
+            score_diff = multi_view_distance.compute_distance(
+                center_score, neigh_score, neighs_indices,
+                center_nodes[idx], relation_idx)
+        else:
+            # compute the L1-distance of batch nodes and their neighbors
+            # Eq. (2) in paper
+            center_score = center_score.repeat(neigh_score.size()[0], 1)
+            score_diff = torch.abs(center_score - neigh_score).squeeze()
         sorted_scores, sorted_indices = torch.sort(score_diff, dim=0, descending=False)
         selected_indices = sorted_indices.tolist()
 

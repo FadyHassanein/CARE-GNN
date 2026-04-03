@@ -77,3 +77,8 @@ class CareConfig:
     reward_w3: float = 0.2
     gamma_init: float = 0.7
     llm_priors_file: str = ''
+
+    # LLM semantic state enrichment
+    use_llm_state: bool = False
+    llm_embedding_path: str = ''  # default resolved at runtime: llm_embeddings/{data}/llm_semantic_embeddings.pt
+    llm_projection_dim: int = 16
