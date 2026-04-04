@@ -1,0 +1,94 @@
+{
+  "lambda_policy=0.01": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "lambda_policy": 0.01,
+      "name": "lambda_policy=0.01"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.8971121242187873,
+      "gnn_accuracy": 0.9654017857142857,
+      "gnn_recall": 0.8932670319432193,
+      "gnn_precision": 0.903085944925964,
+      "gnn_auc": 0.9440567000034159,
+      "gnn_ap": 0.8567866910492886,
+      "label_f1": 0.893518248488404,
+      "label_accuracy": 0.9639136904761905,
+      "label_recall": 0.8917676559288866,
+      "label_precision": 0.8968785273081343,
+      "label_auc": 0.9305800283050318,
+      "label_ap": 0.8411918739192287
+    },
+    "elapsed_seconds": 1500.3698098659515
+  },
+  "lambda_policy=0.05": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "lambda_policy": 0.05,
+      "name": "lambda_policy=0.05"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.899907711121575,
+      "gnn_accuracy": 0.9665178571428571,
+      "gnn_recall": 0.8938820389874067,
+      "gnn_precision": 0.9083954613685743,
+      "gnn_auc": 0.944481318722183,
+      "gnn_ap": 0.8568000935548798,
+      "label_f1": 0.893518248488404,
+      "label_accuracy": 0.9639136904761905,
+      "label_recall": 0.8917676559288866,
+      "label_precision": 0.8968785273081343,
+      "label_auc": 0.9305800283050318,
+      "label_ap": 0.8411918739192287
+    },
+    "elapsed_seconds": 1558.6933012008667
+  },
+  "lambda_policy=0.1": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "lambda_policy": 0.1,
+      "name": "lambda_policy=0.1"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.8994445618179437,
+      "gnn_accuracy": 0.9663318452380952,
+      "gnn_recall": 0.8937780672677145,
+      "gnn_precision": 0.9074443287701484,
+      "gnn_auc": 0.9444800215163213,
+      "gnn_ap": 0.8568103103881208,
+      "label_f1": 0.893518248488404,
+      "label_accuracy": 0.9639136904761905,
+      "label_recall": 0.8917676559288866,
+      "label_precision": 0.8968785273081343,
+      "label_auc": 0.9305800283050318,
+      "label_ap": 0.8411918739192287
+    },
+    "elapsed_seconds": 1571.2541024684906
+  },
+  "lambda_policy=0.5": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "lambda_policy": 0.5,
+      "name": "lambda_policy=0.5"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.8994445618179437,
+      "gnn_accuracy": 0.9663318452380952,
+      "gnn_recall": 0.8937780672677145,
+      "gnn_precision": 0.9074443287701484,
+      "gnn_auc": 0.944433322105296,
+      "gnn_ap": 0.8567269433508863,
+      "label_f1": 0.893518248488404,
+      "label_accuracy": 0.9639136904761905,
+      "label_recall": 0.8917676559288866,
+      "label_precision": 0.8968785273081343,
+      "label_auc": 0.9305800283050318,
+      "label_ap": 0.8411918739192287
+    },
+    "elapsed_seconds": 1670.5743572711945
+  }
+}

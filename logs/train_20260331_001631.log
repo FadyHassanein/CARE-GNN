@@ -1,0 +1,27 @@
+2026-03-31 00:16:31,068 - __main__ - INFO - Logging to logs\train_20260331_001631.log
+2026-03-31 00:16:31,068 - __main__ - INFO - Arguments: {'data': 'amazon', 'model': 'CARE', 'inter': 'GNN', 'batch_size': 256, 'lr': 0.01, 'lambda_1': 2, 'lambda_2': 0.001, 'emb_size': 64, 'num_epochs': 2, 'test_epochs': 1, 'under_sample': 1, 'step_size': 0.02, 'dropout': 0.6, 'device': 'auto', 'seed': 72, 'grad_clip': 1.0, 'patience': 10, 'use_lr_scheduler': True, 'lr_scheduler_patience': 5, 'lr_scheduler_factor': 0.5, 'val_size': 0.15, 'use_validation': True, 'checkpoint_dir': 'checkpoints', 'save_best': True, 'num_layers': 1, 'loss': 'ce', 'sage_num_samples': 5, 'rl_patience': 5, 'rl_epsilon': 0.0001, 'use_capn': True, 'policy_lr': 0.001, 'policy_hidden': 64, 'lambda_policy': 0.1, 'reward_w1': 0.5, 'reward_w2': 0.3, 'reward_w3': 0.2, 'gamma_init': 0.7, 'llm_priors_file': '', 'use_llm_state': True, 'llm_embedding_path': 'llm_embeddings/llm_semantic_embeddings.pt', 'llm_projection_dim': 16}
+2026-03-31 00:16:32,318 - __main__ - INFO - Using device: cuda
+2026-03-31 00:16:32,319 - utils - INFO - Random seed set to 72
+2026-03-31 00:16:32,320 - utils - INFO - Loading cached labels/features from amz_labels.npy, amz_features.npy
+2026-03-31 00:16:37,580 - utils - INFO - Loaded amazon dataset: 11944 nodes, 25 features
+2026-03-31 00:16:37,586 - __main__ - INFO - Split: train=2159, val=1296, test=5184
+2026-03-31 00:16:37,650 - __main__ - INFO - Model: CARE, Inter-AGG: GNN, emb_size: 64
+2026-03-31 00:16:37,680 - __main__ - INFO - LLM state enrichment: embeddings torch.Size([11944, 384]), projection 384 -> 16
+2026-03-31 00:16:37,684 - __main__ - INFO - Policy network state_dim=46
+2026-03-31 00:16:37,684 - __main__ - INFO - CAPN mode enabled: policy_hidden=64, policy_lr=0.001, lambda_policy=0.1
+2026-03-31 00:16:39,048 - __main__ - INFO - Dual optimizer: GNN params=2946, Policy params=30966
+2026-03-31 00:16:40,439 - __main__ - INFO - Epoch: 0, loss: 2.1150, lr: 0.010000, time: 1.39s
+2026-03-31 00:16:56,971 - utils - INFO - GNN F1: 0.8755, Acc: 0.9589, Recall: 0.8647, AUC: 0.9112, AP: 0.8138
+2026-03-31 00:16:56,971 - utils - INFO - Label F1: 0.5137, Acc: 0.6114, Recall: 0.7230, AUC: 0.8833, AP: 0.7843
+2026-03-31 00:17:01,955 - utils - INFO - GNN F1: 0.8705, Acc: 0.9596, Recall: 0.8534, AUC: 0.8790, AP: 0.7646
+2026-03-31 00:17:01,955 - utils - INFO - Label F1: 0.4864, Acc: 0.5729, Recall: 0.7007, AUC: 0.8448, AP: 0.7204
+2026-03-31 00:17:01,955 - __main__ - INFO - Validation AUC: 0.8790
+2026-03-31 00:17:01,961 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_amazon.pt
+2026-03-31 00:17:01,961 - __main__ - INFO - New best model saved (AUC: 0.8790)
+2026-03-31 00:17:03,240 - __main__ - INFO - Epoch: 1, loss: 1.9940, lr: 0.010000, time: 1.28s
+2026-03-31 00:17:21,777 - utils - INFO - GNN F1: 0.9005, Acc: 0.9676, Recall: 0.8835, AUC: 0.8824, AP: 0.8130
+2026-03-31 00:17:21,777 - utils - INFO - Label F1: 0.8854, Acc: 0.9613, Recall: 0.8834, AUC: 0.8780, AP: 0.8064
+2026-03-31 00:17:26,188 - utils - INFO - GNN F1: 0.8776, Acc: 0.9596, Recall: 0.8695, AUC: 0.8410, AP: 0.7651
+2026-03-31 00:17:26,188 - utils - INFO - Label F1: 0.8556, Acc: 0.9505, Recall: 0.8622, AUC: 0.8289, AP: 0.7502
+2026-03-31 00:17:26,188 - __main__ - INFO - Validation AUC: 0.8410
+2026-03-31 00:17:26,188 - __main__ - INFO - Training complete.

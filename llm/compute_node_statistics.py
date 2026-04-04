@@ -1,21 +1,25 @@
 """
 Deliverable 1: Compute per-node relational statistics for LLM semantic enrichment.
 
-Runs ONCE as preprocessing. For each of the 11,944 Amazon nodes, computes:
-- Degree + percentile rank per relation (UPU, USU, UVU)
+Runs ONCE as preprocessing. For each node, computes:
+- Degree + percentile rank per relation
 - Mean label disagreement with neighbors per relation (training labels only)
 - Neighbor feature variance per relation
 - Cross-relation neighbor overlap (Jaccard)
 - Cross-relation degree ratios
 - Feature extremeness (z-score stats using training-set statistics)
+- 2-hop neighborhood size per relation
+- Ego-network density per relation
 
 Usage:
-    python -m llm.compute_node_statistics
+    python -m llm.compute_node_statistics --data amazon
+    python -m llm.compute_node_statistics --data yelp
 """
 
 import argparse
 import logging
 import os
+import random
 import sys
 
 import numpy as np
@@ -187,6 +191,57 @@ def compute_statistics(data='amazon', prefix='data/', output_dir=None):
     # mean absolute z-score
     mean_abs_zscore = np.mean(z_scores, axis=1).astype(np.float32)
 
+    # --- 8. 2-hop neighborhood size per relation ---
+    logger.info('Computing 2-hop neighborhood sizes...')
+    two_hop_size = np.zeros((num_nodes, num_relations), dtype=np.float32)
+
+    for r_idx, adj_list in enumerate(adj_lists):
+        for node in range(num_nodes):
+            direct_neighs = adj_list.get(node, set())
+            if not direct_neighs:
+                continue
+            two_hop = set()
+            for n in direct_neighs:
+                two_hop.update(adj_list.get(n, set()))
+            two_hop -= direct_neighs
+            two_hop.discard(node)
+            two_hop_size[node, r_idx] = len(two_hop)
+        logger.info(f'  {relation_names[r_idx]}: mean_2hop={two_hop_size[:, r_idx].mean():.1f}, '
+                    f'max_2hop={two_hop_size[:, r_idx].max():.0f}')
+
+    # --- 9. Ego-network density per relation ---
+    logger.info('Computing ego-network density...')
+    ego_density = np.zeros((num_nodes, num_relations), dtype=np.float32)
+    MAX_EGO_NEIGHS = 200  # sample if more to keep O(n) manageable
+
+    for r_idx, adj_list in enumerate(adj_lists):
+        for node in range(num_nodes):
+            neighs = list(adj_list.get(node, set()))
+            n = len(neighs)
+            if n < 2:
+                continue
+            # sample for very high-degree nodes
+            if n > MAX_EGO_NEIGHS:
+                neighs = random.sample(neighs, MAX_EGO_NEIGHS)
+                n = MAX_EGO_NEIGHS
+            # count edges among neighbors (exclude self-loops and source node)
+            neigh_set = set(neighs)
+            neigh_set.discard(node)  # exclude source node if present
+            neighs_clean = list(neigh_set)
+            n = len(neighs_clean)
+            if n < 2:
+                continue
+            edges = 0
+            for ni in neighs_clean:
+                ni_neighs = adj_list.get(ni, set())
+                # only count edges to other neighbors (not self, not source)
+                edges += len((ni_neighs & neigh_set) - {ni})
+            edges //= 2  # each edge counted twice
+            max_edges = n * (n - 1) // 2
+            ego_density[node, r_idx] = min(edges / max_edges, 1.0)
+        logger.info(f'  {relation_names[r_idx]}: mean_density={ego_density[:, r_idx].mean():.4f}, '
+                    f'max_density={ego_density[:, r_idx].max():.4f}')
+
     # --- Save all statistics ---
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, 'node_statistics.npz')
@@ -203,6 +258,8 @@ def compute_statistics(data='amazon', prefix='data/', output_dir=None):
         degree_ratios=degree_ratios,             # [N, 3]
         num_extreme_features=num_extreme_features,  # [N]
         mean_abs_zscore=mean_abs_zscore,         # [N]
+        two_hop_size=two_hop_size,               # [N, 3]
+        ego_density=ego_density,                 # [N, 3]
         relation_names=np.array(relation_names),
         cross_pair_names=np.array(cross_pair_names),
         dataset=np.array(data),
@@ -226,6 +283,9 @@ def compute_statistics(data='amazon', prefix='data/', output_dir=None):
                 f'max={num_extreme_features.max():.0f}')
     logger.info(f'Mean |z-score|: mean={mean_abs_zscore.mean():.4f}, '
                 f'max={mean_abs_zscore.max():.4f}')
+    for r_idx, name in enumerate(relation_names):
+        logger.info(f'{name}: mean_2hop={two_hop_size[:, r_idx].mean():.1f}, '
+                    f'mean_ego_density={ego_density[:, r_idx].mean():.4f}')
 
     return output_path
 

@@ -1,0 +1,96 @@
+{
+  "Binary reward (original)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": false,
+      "name": "Binary reward (original)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.90110022608813,
+      "gnn_accuracy": 0.9670758928571429,
+      "gnn_recall": 0.892489902497623,
+      "gnn_precision": 0.9117959749545888,
+      "gnn_auc": 0.939777650267246,
+      "gnn_ap": 0.8535027370037431,
+      "label_f1": 0.7215428399280788,
+      "label_accuracy": 0.8590029761904762,
+      "label_recall": 0.8407842615403793,
+      "label_precision": 0.6849250810809693,
+      "label_auc": 0.8785789369225001,
+      "label_ap": 0.7907883268491497
+    },
+    "elapsed_seconds": 190.65980219841003
+  },
+  "Shaped reward (CAPN)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "name": "Shaped reward (CAPN)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.8994445618179437,
+      "gnn_accuracy": 0.9663318452380952,
+      "gnn_recall": 0.8937780672677145,
+      "gnn_precision": 0.9074443287701484,
+      "gnn_auc": 0.9444800215163213,
+      "gnn_ap": 0.8568103103881208,
+      "label_f1": 0.893518248488404,
+      "label_accuracy": 0.9639136904761905,
+      "label_recall": 0.8917676559288866,
+      "label_precision": 0.8968785273081343,
+      "label_auc": 0.9305800283050318,
+      "label_ap": 0.8411918739192287
+    },
+    "elapsed_seconds": 1389.2397270202637
+  },
+  "Shaped (dist only)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "reward_w1": 1.0,
+      "reward_w2": 0.0,
+      "reward_w3": 0.0,
+      "name": "Shaped (dist only)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.8933307020509196,
+      "gnn_accuracy": 0.9639136904761905,
+      "gnn_recall": 0.8924485318904425,
+      "gnn_precision": 0.8961829151969122,
+      "gnn_auc": 0.9443048987249765,
+      "gnn_ap": 0.8567302588554855,
+      "label_f1": 0.893518248488404,
+      "label_accuracy": 0.9639136904761905,
+      "label_recall": 0.8917676559288866,
+      "label_precision": 0.8968785273081343,
+      "label_auc": 0.9305800283050318,
+      "label_ap": 0.8411918739192287
+    },
+    "elapsed_seconds": 1455.176768064499
+  },
+  "Shaped (acc only)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "reward_w1": 0.0,
+      "reward_w2": 1.0,
+      "reward_w3": 0.0,
+      "name": "Shaped (acc only)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.893774073238537,
+      "gnn_accuracy": 0.9640997023809523,
+      "gnn_recall": 0.8925520515591795,
+      "gnn_precision": 0.8972519092869433,
+      "gnn_auc": 0.9444618606342559,
+      "gnn_ap": 0.8572057840772245,
+      "label_f1": 0.893518248488404,
+      "label_accuracy": 0.9639136904761905,
+      "label_recall": 0.8917676559288866,
+      "label_precision": 0.8968785273081343,
+      "label_auc": 0.9305800283050318,
+      "label_ap": 0.8411918739192287
+    },
+    "elapsed_seconds": 1501.0912036895752
+  }
+}

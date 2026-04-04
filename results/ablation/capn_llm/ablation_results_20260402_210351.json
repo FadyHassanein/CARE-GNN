@@ -1,0 +1,48 @@
+{
+  "CAPN (no priors)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "llm_priors_file": "",
+      "name": "CAPN (no priors)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.13252668999793826,
+      "gnn_accuracy": 0.14980765267045232,
+      "gnn_recall": 0.502394359705605,
+      "gnn_precision": 0.5610651358077894,
+      "gnn_auc": 0.7642719948591561,
+      "gnn_ap": 0.3769655168921407,
+      "label_f1": 0.12679773932969945,
+      "label_accuracy": 0.1453388587645865,
+      "label_recall": 0.5,
+      "label_precision": 0.07266942938229325,
+      "label_auc": 0.7446942466598825,
+      "label_ap": 0.3276521315909585
+    },
+    "elapsed_seconds": 1420.550662279129
+  },
+  "CAPN (LLM priors)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "llm_priors_file": "data/llm_priors/yelp_priors.json",
+      "name": "CAPN (LLM priors)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.13537509446267948,
+      "gnn_accuracy": 0.1520225359052414,
+      "gnn_recall": 0.5034797128335841,
+      "gnn_precision": 0.563724310419974,
+      "gnn_auc": 0.7615277660587236,
+      "gnn_ap": 0.36566657739404684,
+      "label_f1": 0.12679773932969945,
+      "label_accuracy": 0.1453388587645865,
+      "label_recall": 0.5,
+      "label_precision": 0.07266942938229325,
+      "label_auc": 0.7451059853127763,
+      "label_ap": 0.3278117774257569
+    },
+    "elapsed_seconds": 1365.9975907802582
+  }
+}

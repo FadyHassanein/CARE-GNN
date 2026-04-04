@@ -1,0 +1,15 @@
+\begin{table}[ht]
+\centering
+\caption{Capn Reward Results}
+\label{tab:capn_reward}
+\begin{tabular}{lcccc}
+\toprule
+Method & AUC-ROC & AP & F1 (macro) & Recall (macro) \\
+\midrule
+Binary reward (original) & 0.7660 & 0.3779 & \textbf{0.6098} & \textbf{0.7015} \\
+Shaped reward (CAPN) & \textbf{0.7723} & \textbf{0.3987} & 0.5827 & 0.7013 \\
+Shaped (dist only) & 0.7723 & 0.3987 & 0.5827 & 0.7013 \\
+Shaped (acc only) & 0.7723 & 0.3987 & 0.5827 & 0.7013 \\
+\bottomrule
+\end{tabular}
+\end{table}

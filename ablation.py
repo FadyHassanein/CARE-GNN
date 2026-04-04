@@ -170,10 +170,24 @@ def get_capn_lambda_experiments():
 
 
 def get_capn_llm_state_experiments():
-    """A7: LLM semantic state enrichment — with vs without LLM embeddings in policy state."""
+    """A7: LLM semantic state enrichment — with vs without LLM embeddings in policy state (v1)."""
     return [
         {'name': 'CAPN (base state)', 'model': 'CARE', 'use_capn': True, 'use_llm_state': False},
         {'name': 'CAPN (LLM state)', 'model': 'CARE', 'use_capn': True, 'use_llm_state': True},
+    ]
+
+
+def get_capn_enrichment_experiments():
+    """A8: v2 state enrichment — structural features, Claude reasoning scores, both."""
+    return [
+        {'name': 'CAPN (baseline)', 'model': 'CARE', 'use_capn': True,
+         'enrichment_mode': 'none'},
+        {'name': 'CAPN + structural', 'model': 'CARE', 'use_capn': True,
+         'enrichment_mode': 'structural'},
+        {'name': 'CAPN + reasoning', 'model': 'CARE', 'use_capn': True,
+         'enrichment_mode': 'reasoning'},
+        {'name': 'CAPN + both', 'model': 'CARE', 'use_capn': True,
+         'enrichment_mode': 'both'},
     ]
 
 
@@ -197,7 +211,7 @@ if __name__ == '__main__':
     parser.add_argument('--study', type=str, required=True,
                         choices=['inter', 'loss', 'layers', 'baseline',
                                  'capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda',
-                                 'capn_llm_state',
+                                 'capn_llm_state', 'capn_enrichment',
                                  'all', 'all_capn'],
                         help='Which ablation study to run')
     parser.add_argument('--data', type=str, default='yelp',
@@ -218,9 +232,10 @@ if __name__ == '__main__':
         'capn_llm': get_capn_llm_prior_experiments,
         'capn_lambda': get_capn_lambda_experiments,
         'capn_llm_state': get_capn_llm_state_experiments,
+        'capn_enrichment': get_capn_enrichment_experiments,
     }
 
-    capn_studies = ['capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda', 'capn_llm_state']
+    capn_studies = ['capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda', 'capn_llm_state', 'capn_enrichment']
 
     # determine which studies to run
     if ab_args.study == 'all':

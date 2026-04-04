@@ -1,0 +1,605 @@
+2026-03-26 02:43:33,139 - __main__ - INFO - 
+
+Starting study: capn
+2026-03-26 02:43:33,139 - __main__ - INFO - 
+============================================================
+2026-03-26 02:43:33,139 - __main__ - INFO - Running experiment: CARE-GNN (original RL)
+2026-03-26 02:43:33,139 - __main__ - INFO - ============================================================
+2026-03-26 02:43:33,139 - __main__ - INFO - Config: {'model': 'CARE', 'use_capn': False}
+2026-03-26 02:43:34,366 - train - INFO - Using device: cuda
+2026-03-26 02:43:34,368 - utils - INFO - Random seed set to 72
+2026-03-26 02:43:39,187 - utils - INFO - Loaded yelp dataset: 45954 nodes, 32 features
+2026-03-26 02:43:39,221 - train - INFO - Split: train=11488, val=6893, test=27573
+2026-03-26 02:43:39,321 - train - INFO - Model: CARE, Inter-AGG: GNN, emb_size: 64
+2026-03-26 02:43:45,247 - train - INFO - Epoch: 0, loss: 2.0766, lr: 0.010000, time: 4.34s
+2026-03-26 02:44:17,194 - utils - INFO - GNN F1: 0.5886, Acc: 0.8457, Recall: 0.5739, AUC: 0.7029, AP: 0.3143
+2026-03-26 02:44:17,194 - utils - INFO - Label F1: 0.4643, Acc: 0.8534, Recall: 0.5009, AUC: 0.5740, AP: 0.1835
+2026-03-26 02:44:25,110 - utils - INFO - GNN F1: 0.5910, Acc: 0.8469, Recall: 0.5758, AUC: 0.7176, AP: 0.3294
+2026-03-26 02:44:25,111 - utils - INFO - Label F1: 0.4613, Acc: 0.8536, Recall: 0.4995, AUC: 0.5919, AP: 0.1891
+2026-03-26 02:44:25,111 - train - INFO - Validation AUC: 0.7176
+2026-03-26 02:44:25,120 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:44:25,120 - train - INFO - New best model saved (AUC: 0.7176)
+2026-03-26 02:44:29,699 - train - INFO - Epoch: 1, loss: 2.0661, lr: 0.010000, time: 4.58s
+2026-03-26 02:44:31,047 - layers - INFO - RL update - scores: ['0.0014', '0.0040', '0.0043'], rewards: [-1, -1, -1], thresholds: ['0.4800', '0.4800', '0.4800']
+2026-03-26 02:44:33,780 - train - INFO - Epoch: 2, loss: 2.0588, lr: 0.010000, time: 4.08s
+2026-03-26 02:44:34,927 - layers - INFO - RL update - scores: ['0.0017', '0.0048', '0.0051'], rewards: [-1, -1, -1], thresholds: ['0.4600', '0.4600', '0.4600']
+2026-03-26 02:44:37,853 - train - INFO - Epoch: 3, loss: 2.0509, lr: 0.010000, time: 4.07s
+2026-03-26 02:45:11,416 - utils - INFO - GNN F1: 0.6083, Acc: 0.7484, Recall: 0.6536, AUC: 0.7243, AP: 0.3252
+2026-03-26 02:45:11,416 - utils - INFO - Label F1: 0.4566, Acc: 0.4925, Recall: 0.6258, AUC: 0.6896, AP: 0.2694
+2026-03-26 02:45:19,134 - utils - INFO - GNN F1: 0.6122, Acc: 0.7511, Recall: 0.6578, AUC: 0.7323, AP: 0.3311
+2026-03-26 02:45:19,134 - utils - INFO - Label F1: 0.4650, Acc: 0.5021, Recall: 0.6363, AUC: 0.7030, AP: 0.2777
+2026-03-26 02:45:19,134 - train - INFO - Validation AUC: 0.7323
+2026-03-26 02:45:19,145 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:45:19,146 - train - INFO - New best model saved (AUC: 0.7323)
+2026-03-26 02:45:20,358 - layers - INFO - RL update - scores: ['0.0020', '0.0057', '0.0059'], rewards: [-1, -1, -1], thresholds: ['0.4400', '0.4400', '0.4400']
+2026-03-26 02:45:23,599 - train - INFO - Epoch: 4, loss: 2.0409, lr: 0.010000, time: 4.45s
+2026-03-26 02:45:24,980 - layers - INFO - RL update - scores: ['0.0021', '0.0064', '0.0068'], rewards: [-1, -1, -1], thresholds: ['0.4200', '0.4200', '0.4200']
+2026-03-26 02:45:27,713 - train - INFO - Epoch: 5, loss: 2.0319, lr: 0.010000, time: 4.11s
+2026-03-26 02:45:29,088 - layers - INFO - RL update - scores: ['0.0025', '0.0073', '0.0076'], rewards: [-1, -1, -1], thresholds: ['0.4000', '0.4000', '0.4000']
+2026-03-26 02:45:31,971 - train - INFO - Epoch: 6, loss: 2.0214, lr: 0.010000, time: 4.26s
+2026-03-26 02:46:03,701 - utils - INFO - GNN F1: 0.5481, Acc: 0.6273, Recall: 0.6662, AUC: 0.7316, AP: 0.3273
+2026-03-26 02:46:03,702 - utils - INFO - Label F1: 0.5886, Acc: 0.8272, Recall: 0.5785, AUC: 0.7124, AP: 0.2928
+2026-03-26 02:46:11,945 - utils - INFO - GNN F1: 0.5579, Acc: 0.6385, Recall: 0.6765, AUC: 0.7361, AP: 0.3313
+2026-03-26 02:46:11,946 - utils - INFO - Label F1: 0.5938, Acc: 0.8290, Recall: 0.5823, AUC: 0.7212, AP: 0.2993
+2026-03-26 02:46:11,946 - train - INFO - Validation AUC: 0.7361
+2026-03-26 02:46:11,955 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:46:11,955 - train - INFO - New best model saved (AUC: 0.7361)
+2026-03-26 02:46:13,174 - layers - INFO - RL update - scores: ['0.0028', '0.0079', '0.0084'], rewards: [-1, -1, -1], thresholds: ['0.3800', '0.3800', '0.3800']
+2026-03-26 02:46:16,400 - train - INFO - Epoch: 7, loss: 2.0098, lr: 0.010000, time: 4.44s
+2026-03-26 02:46:17,810 - layers - INFO - RL update - scores: ['0.0032', '0.0083', '0.0089'], rewards: [-1, -1, -1], thresholds: ['0.3600', '0.3600', '0.3600']
+2026-03-26 02:46:20,620 - train - INFO - Epoch: 8, loss: 1.9974, lr: 0.010000, time: 4.22s
+2026-03-26 02:46:22,008 - layers - INFO - RL update - scores: ['0.0036', '0.0089', '0.0095'], rewards: [-1, -1, -1], thresholds: ['0.3400', '0.3400', '0.3400']
+2026-03-26 02:46:24,716 - train - INFO - Epoch: 9, loss: 1.9867, lr: 0.010000, time: 4.09s
+2026-03-26 02:46:57,271 - utils - INFO - GNN F1: 0.5866, Acc: 0.6902, Recall: 0.6757, AUC: 0.7408, AP: 0.3369
+2026-03-26 02:46:57,271 - utils - INFO - Label F1: 0.5420, Acc: 0.6193, Recall: 0.6611, AUC: 0.7196, AP: 0.3016
+2026-03-26 02:47:05,576 - utils - INFO - GNN F1: 0.5935, Acc: 0.6968, Recall: 0.6838, AUC: 0.7446, AP: 0.3408
+2026-03-26 02:47:05,576 - utils - INFO - Label F1: 0.5518, Acc: 0.6313, Recall: 0.6702, AUC: 0.7270, AP: 0.3074
+2026-03-26 02:47:05,576 - train - INFO - Validation AUC: 0.7446
+2026-03-26 02:47:05,585 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:47:05,585 - train - INFO - New best model saved (AUC: 0.7446)
+2026-03-26 02:47:06,890 - layers - INFO - RL update - scores: ['0.0040', '0.0092', '0.0098'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.3200', '0.3200']
+2026-03-26 02:47:10,012 - train - INFO - Epoch: 10, loss: 1.9795, lr: 0.010000, time: 4.42s
+2026-03-26 02:47:11,217 - layers - INFO - RL update - scores: ['0.0034', '0.0096', '0.0102'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.3000', '0.3000']
+2026-03-26 02:47:14,528 - train - INFO - Epoch: 11, loss: 1.9650, lr: 0.010000, time: 4.51s
+2026-03-26 02:47:15,909 - layers - INFO - RL update - scores: ['0.0039', '0.0098', '0.0106'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2800', '0.2800']
+2026-03-26 02:47:18,631 - train - INFO - Epoch: 12, loss: 1.9748, lr: 0.010000, time: 4.10s
+2026-03-26 02:47:50,456 - utils - INFO - GNN F1: 0.5689, Acc: 0.6524, Recall: 0.6858, AUC: 0.7490, AP: 0.3447
+2026-03-26 02:47:50,456 - utils - INFO - Label F1: 0.5032, Acc: 0.5561, Recall: 0.6546, AUC: 0.7216, AP: 0.3050
+2026-03-26 02:47:58,315 - utils - INFO - GNN F1: 0.5754, Acc: 0.6616, Recall: 0.6893, AUC: 0.7531, AP: 0.3508
+2026-03-26 02:47:58,315 - utils - INFO - Label F1: 0.5098, Acc: 0.5645, Recall: 0.6609, AUC: 0.7284, AP: 0.3103
+2026-03-26 02:47:58,315 - train - INFO - Validation AUC: 0.7531
+2026-03-26 02:47:58,324 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:47:58,324 - train - INFO - New best model saved (AUC: 0.7531)
+2026-03-26 02:47:59,484 - layers - INFO - RL update - scores: ['0.0036', '0.0098', '0.0105'], rewards: [1, -1, 1], thresholds: ['0.3400', '0.2600', '0.3000']
+2026-03-26 02:48:02,364 - train - INFO - Epoch: 13, loss: 1.9595, lr: 0.010000, time: 4.04s
+2026-03-26 02:48:04,124 - layers - INFO - RL update - scores: ['0.0047', '0.0100', '0.0119'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:48:06,783 - train - INFO - Epoch: 14, loss: 1.9493, lr: 0.010000, time: 4.42s
+2026-03-26 02:48:07,938 - layers - INFO - RL update - scores: ['0.0042', '0.0098', '0.0124'], rewards: [1, 1, -1], thresholds: ['0.3400', '0.2600', '0.2600']
+2026-03-26 02:48:10,750 - train - INFO - Epoch: 15, loss: 1.9546, lr: 0.010000, time: 3.96s
+2026-03-26 02:48:41,625 - utils - INFO - GNN F1: 0.5199, Acc: 0.5736, Recall: 0.6783, AUC: 0.7587, AP: 0.3663
+2026-03-26 02:48:41,626 - utils - INFO - Label F1: 0.6011, Acc: 0.7336, Recall: 0.6548, AUC: 0.7218, AP: 0.3064
+2026-03-26 02:48:49,473 - utils - INFO - GNN F1: 0.5275, Acc: 0.5840, Recall: 0.6832, AUC: 0.7639, AP: 0.3728
+2026-03-26 02:48:49,473 - utils - INFO - Label F1: 0.6053, Acc: 0.7375, Recall: 0.6587, AUC: 0.7286, AP: 0.3125
+2026-03-26 02:48:49,473 - train - INFO - Validation AUC: 0.7639
+2026-03-26 02:48:49,481 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:48:49,482 - train - INFO - New best model saved (AUC: 0.7639)
+2026-03-26 02:48:50,751 - layers - INFO - RL update - scores: ['0.0057', '0.0110', '0.0123'], rewards: [-1, -1, 1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:48:53,915 - train - INFO - Epoch: 16, loss: 1.9559, lr: 0.010000, time: 4.43s
+2026-03-26 02:48:55,622 - layers - INFO - RL update - scores: ['0.0053', '0.0111', '0.0137'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:48:58,435 - train - INFO - Epoch: 17, loss: 1.9407, lr: 0.010000, time: 4.52s
+2026-03-26 02:48:59,683 - layers - INFO - RL update - scores: ['0.0058', '0.0103', '0.0133'], rewards: [-1, 1, 1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:49:02,504 - train - INFO - Epoch: 18, loss: 1.9422, lr: 0.010000, time: 4.07s
+2026-03-26 02:49:33,857 - utils - INFO - GNN F1: 0.6134, Acc: 0.7227, Recall: 0.6966, AUC: 0.7602, AP: 0.3646
+2026-03-26 02:49:33,857 - utils - INFO - Label F1: 0.5896, Acc: 0.7064, Recall: 0.6614, AUC: 0.7230, AP: 0.3082
+2026-03-26 02:49:41,960 - utils - INFO - GNN F1: 0.6138, Acc: 0.7233, Recall: 0.6965, AUC: 0.7657, AP: 0.3729
+2026-03-26 02:49:41,960 - utils - INFO - Label F1: 0.5939, Acc: 0.7108, Recall: 0.6652, AUC: 0.7295, AP: 0.3142
+2026-03-26 02:49:41,961 - train - INFO - Validation AUC: 0.7657
+2026-03-26 02:49:41,969 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:49:41,969 - train - INFO - New best model saved (AUC: 0.7657)
+2026-03-26 02:49:43,139 - layers - INFO - RL update - scores: ['0.0053', '0.0120', '0.0149'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:49:45,971 - train - INFO - Epoch: 19, loss: 1.9454, lr: 0.010000, time: 4.00s
+2026-03-26 02:49:47,487 - layers - INFO - RL update - scores: ['0.0069', '0.0116', '0.0148'], rewards: [-1, 1, 1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:49:50,559 - train - INFO - Epoch: 20, loss: 1.9418, lr: 0.010000, time: 4.59s
+2026-03-26 02:49:51,863 - layers - INFO - RL update - scores: ['0.0059', '0.0127', '0.0160'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:49:54,668 - train - INFO - Epoch: 21, loss: 1.9314, lr: 0.010000, time: 4.11s
+2026-03-26 02:50:25,936 - utils - INFO - GNN F1: 0.5613, Acc: 0.6354, Recall: 0.6934, AUC: 0.7644, AP: 0.3741
+2026-03-26 02:50:25,937 - utils - INFO - Label F1: 0.5376, Acc: 0.6097, Recall: 0.6646, AUC: 0.7257, AP: 0.3110
+2026-03-26 02:50:33,867 - utils - INFO - GNN F1: 0.5649, Acc: 0.6409, Recall: 0.6944, AUC: 0.7687, AP: 0.3792
+2026-03-26 02:50:33,868 - utils - INFO - Label F1: 0.5423, Acc: 0.6154, Recall: 0.6693, AUC: 0.7314, AP: 0.3168
+2026-03-26 02:50:33,868 - train - INFO - Validation AUC: 0.7687
+2026-03-26 02:50:33,876 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:50:33,876 - train - INFO - New best model saved (AUC: 0.7687)
+2026-03-26 02:50:35,003 - layers - INFO - RL update - scores: ['0.0073', '0.0130', '0.0166'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2400']
+2026-03-26 02:50:37,825 - train - INFO - Epoch: 22, loss: 1.9351, lr: 0.010000, time: 3.95s
+2026-03-26 02:50:39,211 - layers - INFO - RL update - scores: ['0.0064', '0.0121', '0.0159'], rewards: [1, 1, 1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:50:42,455 - train - INFO - Epoch: 23, loss: 1.9326, lr: 0.010000, time: 4.63s
+2026-03-26 02:50:43,750 - layers - INFO - RL update - scores: ['0.0080', '0.0132', '0.0169'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2400']
+2026-03-26 02:50:46,408 - train - INFO - Epoch: 24, loss: 1.9385, lr: 0.010000, time: 3.95s
+2026-03-26 02:51:17,444 - utils - INFO - GNN F1: 0.6261, Acc: 0.7457, Recall: 0.6946, AUC: 0.7636, AP: 0.3691
+2026-03-26 02:51:17,444 - utils - INFO - Label F1: 0.4388, Acc: 0.4635, Recall: 0.6352, AUC: 0.7282, AP: 0.3134
+2026-03-26 02:51:25,169 - utils - INFO - GNN F1: 0.6260, Acc: 0.7454, Recall: 0.6945, AUC: 0.7679, AP: 0.3751
+2026-03-26 02:51:25,170 - utils - INFO - Label F1: 0.4472, Acc: 0.4739, Recall: 0.6422, AUC: 0.7332, AP: 0.3192
+2026-03-26 02:51:25,170 - train - INFO - Validation AUC: 0.7679
+2026-03-26 02:51:26,292 - layers - INFO - RL update - scores: ['0.0069', '0.0128', '0.0170'], rewards: [1, 1, -1], thresholds: ['0.3400', '0.2200', '0.2200']
+2026-03-26 02:51:29,088 - train - INFO - Epoch: 25, loss: 1.9299, lr: 0.010000, time: 3.92s
+2026-03-26 02:51:30,201 - layers - INFO - RL update - scores: ['0.0075', '0.0138', '0.0159'], rewards: [-1, -1, 1], thresholds: ['0.3200', '0.2000', '0.2400']
+2026-03-26 02:51:32,951 - train - INFO - Epoch: 26, loss: 1.9419, lr: 0.010000, time: 3.86s
+2026-03-26 02:51:34,410 - layers - INFO - RL update - scores: ['0.0072', '0.0133', '0.0169'], rewards: [1, 1, -1], thresholds: ['0.3400', '0.2200', '0.2200']
+2026-03-26 02:51:37,219 - train - INFO - Epoch: 27, loss: 1.9225, lr: 0.010000, time: 4.27s
+2026-03-26 02:52:09,140 - utils - INFO - GNN F1: 0.6098, Acc: 0.7132, Recall: 0.7015, AUC: 0.7660, AP: 0.3779
+2026-03-26 02:52:09,141 - utils - INFO - Label F1: 0.6144, Acc: 0.7627, Recall: 0.6506, AUC: 0.7304, AP: 0.3151
+2026-03-26 02:52:16,985 - utils - INFO - GNN F1: 0.6110, Acc: 0.7150, Recall: 0.7019, AUC: 0.7705, AP: 0.3819
+2026-03-26 02:52:16,985 - utils - INFO - Label F1: 0.6150, Acc: 0.7648, Recall: 0.6496, AUC: 0.7347, AP: 0.3204
+2026-03-26 02:52:16,986 - train - INFO - Validation AUC: 0.7705
+2026-03-26 02:52:16,994 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:52:16,995 - train - INFO - New best model saved (AUC: 0.7705)
+2026-03-26 02:52:18,158 - layers - INFO - RL update - scores: ['0.0081', '0.0146', '0.0171'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2000']
+2026-03-26 02:52:20,861 - train - INFO - Epoch: 28, loss: 1.9271, lr: 0.010000, time: 3.86s
+2026-03-26 02:52:22,181 - layers - INFO - RL update - scores: ['0.0079', '0.0139', '0.0157'], rewards: [1, 1, 1], thresholds: ['0.3400', '0.2200', '0.2200']
+2026-03-26 02:52:24,887 - train - INFO - Epoch: 29, loss: 1.9353, lr: 0.010000, time: 4.03s
+2026-03-26 02:52:26,650 - layers - INFO - RL update - scores: ['0.0087', '0.0151', '0.0171'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2000']
+2026-03-26 02:52:29,287 - train - INFO - Epoch: 30, loss: 1.9148, lr: 0.010000, time: 4.40s
+2026-03-26 02:53:00,521 - utils - INFO - GNN F1: 0.5830, Acc: 0.6701, Recall: 0.6974, AUC: 0.7646, AP: 0.3725
+2026-03-26 02:53:00,521 - utils - INFO - Label F1: 0.5498, Acc: 0.6269, Recall: 0.6720, AUC: 0.7325, AP: 0.3173
+2026-03-26 02:53:08,465 - utils - INFO - GNN F1: 0.5855, Acc: 0.6736, Recall: 0.6987, AUC: 0.7693, AP: 0.3778
+2026-03-26 02:53:08,465 - utils - INFO - Label F1: 0.5580, Acc: 0.6363, Recall: 0.6809, AUC: 0.7362, AP: 0.3224
+2026-03-26 02:53:08,466 - train - INFO - Validation AUC: 0.7693
+2026-03-26 02:53:08,466 - train - INFO - Training complete.
+2026-03-26 02:53:08,600 - __main__ - INFO - Experiment CARE-GNN (original RL) completed in 575.5s
+2026-03-26 02:53:08,601 - __main__ - INFO - Best GNN AUC: 0.7659924485063468
+2026-03-26 02:53:08,601 - __main__ - INFO - 
+============================================================
+2026-03-26 02:53:08,601 - __main__ - INFO - Running experiment: CAPN (policy network)
+2026-03-26 02:53:08,601 - __main__ - INFO - ============================================================
+2026-03-26 02:53:08,601 - __main__ - INFO - Config: {'model': 'CARE', 'use_capn': True}
+2026-03-26 02:53:08,602 - train - INFO - Using device: cuda
+2026-03-26 02:53:08,605 - utils - INFO - Random seed set to 72
+2026-03-26 02:53:13,126 - utils - INFO - Loaded yelp dataset: 45954 nodes, 32 features
+2026-03-26 02:53:13,168 - train - INFO - Split: train=11488, val=6893, test=27573
+2026-03-26 02:53:13,198 - train - INFO - Model: CARE, Inter-AGG: GNN, emb_size: 64
+2026-03-26 02:53:13,215 - train - INFO - CAPN mode enabled: policy_hidden=64, policy_lr=0.001, lambda_policy=0.1
+2026-03-26 02:53:13,217 - train - INFO - Dual optimizer: GNN params=3618, Policy params=4710
+2026-03-26 02:53:13,940 - __main__ - ERROR - Experiment CAPN (policy network) failed: 
+  #ifdef __HIPCC__
+  #define ERROR_UNSUPPORTED_CAST ;
+  // corresponds to aten/src/ATen/native/cuda/thread_constants.h
+  #define CUDA_OR_ROCM_NUM_THREADS 256
+  // corresponds to aten/src/ATen/cuda/detail/OffsetCalculator.cuh
+  #define MAX_DIMS 16
+  #ifndef __forceinline__
+  #define __forceinline__ inline __attribute__((always_inline))
+  #endif
+  #else
+  //TODO use _assert_fail, because assert is disabled in non-debug builds
+  #define ERROR_UNSUPPORTED_CAST assert(false);
+  #define CUDA_OR_ROCM_NUM_THREADS 128
+  #define MAX_DIMS 25
+  #endif
+  #define POS_INFINITY __int_as_float(0x7f800000)
+  #define INFINITY POS_INFINITY
+  #define NEG_INFINITY __int_as_float(0xff800000)
+  #define NAN __int_as_float(0x7fffffff)
+
+  typedef long long int int64_t;
+  typedef unsigned int uint32_t;
+  typedef signed char int8_t;
+  typedef unsigned char uint8_t;  // NOTE: this MUST be "unsigned char"! "char" is equivalent to "signed char"
+  typedef short int16_t;
+  static_assert(sizeof(int64_t) == 8, "expected size does not match");
+  static_assert(sizeof(uint32_t) == 4, "expected size does not match");
+  static_assert(sizeof(int8_t) == 1, "expected size does not match");
+  constexpr int num_threads = CUDA_OR_ROCM_NUM_THREADS;
+  constexpr int thread_work_size = 4; // TODO: make template substitution once we decide where those vars live
+  constexpr int block_work_size = thread_work_size * num_threads;
+
+  
+  
+  
+  namespace std {
+  
+  using ::signbit;
+  using ::isfinite;
+  using ::isinf;
+  using ::isnan;
+  
+  using ::abs;
+  
+  using ::acos;
+  using ::acosf;
+  using ::asin;
+  using ::asinf;
+  using ::atan;
+  using ::atanf;
+  using ::atan2;
+  using ::atan2f;
+  using ::ceil;
+  using ::ceilf;
+  using ::cos;
+  using ::cosf;
+  using ::cosh;
+  using ::coshf;
+  
+  using ::exp;
+  using ::expf;
+  
+  using ::fabs;
+  using ::fabsf;
+  using ::floor;
+  using ::floorf;
+  
+  using ::fmod;
+  using ::fmodf;
+  
+  using ::frexp;
+  using ::frexpf;
+  using ::ldexp;
+  using ::ldexpf;
+  
+  using ::log;
+  using ::logf;
+  
+  using ::log10;
+  using ::log10f;
+  using ::modf;
+  using ::modff;
+  
+  using ::pow;
+  using ::powf;
+  
+  using ::sin;
+  using ::sinf;
+  using ::sinh;
+  using ::sinhf;
+  
+  using ::sqrt;
+  using ::sqrtf;
+  using ::tan;
+  using ::tanf;
+  
+  using ::tanh;
+  using ::tanhf;
+  
+  using ::acosh;
+  using ::acoshf;
+  using ::asinh;
+  using ::asinhf;
+  using ::atanh;
+  using ::atanhf;
+  using ::cbrt;
+  using ::cbrtf;
+  
+  using ::copysign;
+  using ::copysignf;
+  
+  using ::erf;
+  using ::erff;
+  using ::erfc;
+  using ::erfcf;
+  using ::exp2;
+  using ::exp2f;
+  using ::expm1;
+  using ::expm1f;
+  using ::fdim;
+  using ::fdimf;
+  using ::fmaf;
+  using ::fma;
+  using ::fmax;
+  using ::fmaxf;
+  using ::fmin;
+  using ::fminf;
+  using ::hypot;
+  using ::hypotf;
+  using ::ilogb;
+  using ::ilogbf;
+  using ::lgamma;
+  using ::lgammaf;
+  using ::llrint;
+  using ::llrintf;
+  using ::llround;
+  using ::llroundf;
+  using ::log1p;
+  using ::log1pf;
+  using ::log2;
+  using ::log2f;
+  using ::logb;
+  using ::logbf;
+  using ::lrint;
+  using ::lrintf;
+  using ::lround;
+  using ::lroundf;
+  
+  using ::nan;
+  using ::nanf;
+  
+  using ::nearbyint;
+  using ::nearbyintf;
+  using ::nextafter;
+  using ::nextafterf;
+  using ::remainder;
+  using ::remainderf;
+  using ::remquo;
+  using ::remquof;
+  using ::rint;
+  using ::rintf;
+  using ::round;
+  using ::roundf;
+  using ::scalbln;
+  using ::scalblnf;
+  using ::scalbn;
+  using ::scalbnf;
+  using ::tgamma;
+  using ::tgammaf;
+  using ::trunc;
+  using ::truncf;
+  
+  } // namespace std
+  
+  
+
+  // NB: Order matters for this macro; it is relied upon in
+  // _promoteTypesLookup and the serialization format.
+  // Note, some types have ctype as void because we don't support them in codegen
+  #define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX(_) \
+  _(uint8_t, Byte) /* 0 */                               \
+  _(int8_t, Char) /* 1 */                                \
+  _(int16_t, Short) /* 2 */                              \
+  _(int, Int) /* 3 */                                    \
+  _(int64_t, Long) /* 4 */                               \
+  _(at::Half, Half) /* 5 */                                  \
+  _(float, Float) /* 6 */                                \
+  _(double, Double) /* 7 */                              \
+  _(std::complex<at::Half>, ComplexHalf) /* 8 */        \
+  _(std::complex<float>, ComplexFloat) /* 9 */                          \
+  _(std::complex<double>, ComplexDouble) /* 10 */                         \
+  _(bool, Bool) /* 11 */                                 \
+  _(void, QInt8) /* 12 */                          \
+  _(void, QUInt8) /* 13 */                        \
+  _(void, QInt32) /* 14 */                        \
+  _(at::BFloat16, BFloat16) /* 15 */                             \
+
+  #define AT_FORALL_SCALAR_TYPES_WITH_COMPLEX_EXCEPT_QINT(_)       \
+  _(uint8_t, Byte)                                                 \
+  _(int8_t, Char)                                                  \
+  _(int16_t, Short)                                                \
+  _(int, Int)                                                      \
+  _(int64_t, Long)                                                 \
+  _(at::Half, Half)                                                \
+  _(float, Float)                                                  \
+  _(double, Double)                                                \
+  _(std::complex<at::Half>, ComplexHalf)                           \
+  _(std::complex<float>, ComplexFloat)                             \
+  _(std::complex<double>, ComplexDouble)                           \
+  _(bool, Bool)                                                    \
+  _(at::BFloat16, BFloat16)
+
+
+  enum class ScalarType : int8_t {
+  #define DEFINE_ENUM(_1, n) n,
+  AT_FORALL_SCALAR_TYPES_WITH_COMPLEX(DEFINE_ENUM)
+  #undef DEFINE_ENUM
+      Undefined,
+  NumOptions
+  };
+
+  template <typename T, int size>
+  struct Array {
+  T data[size];
+
+  __device__ T operator[](int i) const {
+      return data[i];
+  }
+  __device__ T& operator[](int i) {
+      return data[i];
+  }
+  Array() = default;
+  Array(const Array&) = default;
+  Array& operator=(const Array&) = default;
+  __device__ Array(T x) {
+    for (int i = 0; i < size; i++) {
+      data[i] = x;
+    }
+  }
+  };
+
+  
+  
+  
+  
+  
+
+
+
+
+  
+  
+    namespace c10 {
+      template <typename T>
+      struct LoadImpl {
+        __device__ static T apply(const void *src) {
+          return *reinterpret_cast<const T*>(src);
+        }
+      };
+  
+      template <>
+      struct LoadImpl<bool> {
+        __device__ static bool apply(const void *src) {
+          static_assert(sizeof(bool) == sizeof(char), "");
+          return LoadImpl<char>::apply(src);
+        }
+      };
+  
+      template <typename T>
+      __device__ T load(const void *src) {
+        return LoadImpl<T>::apply(src);
+      }
+  
+      template <typename scalar_t>
+      __device__ scalar_t load(const scalar_t *src) {
+        return LoadImpl<scalar_t>::apply(src);
+      }
+    }  // namespace c10
+  
+  
+
+  template <typename scalar_t>
+  __device__ __inline__ scalar_t load(char* base_ptr, uint32_t offset) {
+      return c10::load(reinterpret_cast<scalar_t*>(base_ptr) + offset);
+  }
+
+  template<typename scalar_t>
+  __device__ __inline__ void store(scalar_t value, char *base_ptr, uint32_t offset) {
+      *(reinterpret_cast<scalar_t *>(base_ptr) + offset) = value;
+  }
+
+  // aligned vector generates vectorized load/store on CUDA
+  template<typename scalar_t, int vec_size>
+  struct alignas(sizeof(scalar_t) * vec_size) aligned_vector {
+    scalar_t val[vec_size];
+  };
+
+  template <int vec_size, typename scalar_t>
+  __device__ aligned_vector<scalar_t, vec_size> load_vector(const scalar_t *base_ptr, uint32_t offset) {
+    using vec_t = aligned_vector<scalar_t, vec_size>;
+    auto *from = reinterpret_cast<const vec_t *>(base_ptr);
+    return from[offset];
+  }
+
+  template <int vec_size>
+  __device__ aligned_vector<bool, vec_size> load_vector(const bool *base_ptr, uint32_t offset) {
+    // See NOTE [Loading boolean values]
+    auto tmp = load_vector<vec_size>(reinterpret_cast<const uint8_t*>(base_ptr), offset);
+    aligned_vector<bool, vec_size> ret;
+    for (int i = 0; i < vec_size; ++i) {
+      ret.val[i] = bool(tmp.val[i]);
+    }
+    return ret;
+  }
+
+  template <typename T> T lgamma_kernel(T a) { return lgamma(a); }
+
+  // TODO: setup grid-stride loop
+
+  extern "C" __global__
+  void lgamma_kernel_vectorized4_kernel(
+      const int N,
+      Array<char*, 1+1> data,
+      float scalar_val) //[1+1],
+      {
+      constexpr int vec_size = 4;
+      using scalar_t = float;
+      int remaining = N - block_work_size * blockIdx.x;
+      int thread_idx = threadIdx.x;
+      int idx = blockIdx.x;
+      float arg0[4];
+      
+      float out0[4];
+      
+
+      if (remaining < block_work_size) {
+        #pragma unroll
+        for (int j = 0; j < thread_work_size; j++){
+          if (thread_idx >= remaining) {
+            break;
+          }
+          int linear_idx = thread_idx + block_work_size * idx;
+          arg0[j] = load<float>(data[1], linear_idx);
+          
+          thread_idx += num_threads;
+        }
+        #pragma unroll
+        for (int j = 0; j < thread_work_size; j++) {
+          if ((threadIdx.x  + j*num_threads) < remaining) {
+            out0[j] = lgamma_kernel<float>(arg0[j] );
+          }
+        }
+        thread_idx = threadIdx.x;
+        #pragma unroll
+        for (int j = 0; j < thread_work_size; j++) {
+          if (thread_idx >= remaining) {
+              break;
+          }
+          int linear_idx = thread_idx + block_work_size * idx;
+          store<float>(out0[j], data[0], linear_idx);
+          
+          thread_idx += num_threads;
+        }
+      } else {
+        static constexpr int loop_size = thread_work_size / vec_size;
+  //actual loading
+        auto * input0 = reinterpret_cast<const scalar_t*>(data[0+1]) + block_work_size * idx;
+        
+        #pragma unroll
+        for (int i = 0; i<loop_size; i++){
+          const auto vec0 = load_vector<vec_size>(input0, thread_idx);
+          #pragma unroll
+          for (int j=0; j < vec_size; j++){
+            arg0[vec_size * i + j] = vec0.val[j];
+          }
+          
+          thread_idx += num_threads;
+        }
+
+        #pragma unroll
+        for (int j = 0; j < thread_work_size; j++) {
+          out0[j] = lgamma_kernel<float>(arg0[j] );
+        }
+
+        using vec_t_output = aligned_vector<float, vec_size>;
+        vec_t_output* to_0 = reinterpret_cast<vec_t_output*>(data[0]) + block_work_size / vec_size * idx;
+        
+        int thread_idx = threadIdx.x;
+        #pragma unroll
+        for (int i = 0; i<loop_size; i++){
+          vec_t_output v;
+          #pragma unroll
+          for (int j=0; j<vec_size; j++){
+          v.val[j] = out0[vec_size * i + j];
+          }
+          to_0[thread_idx] = v;
+          
+          thread_idx += num_threads;
+        }
+      }
+  }
+nvrtc: error: failed to open nvrtc-builtins64_121.dll.
+  Make sure that nvrtc-builtins64_121.dll is installed correctly.
+2026-03-26 02:53:14,265 - __main__ - INFO - Results saved to results/ablation\capn\ablation_results_20260326_025314.json
+2026-03-26 02:53:14,495 - __main__ - INFO - 
+
+Starting study: capn_label
+2026-03-26 02:53:14,496 - __main__ - INFO - 
+============================================================
+2026-03-26 02:53:14,496 - __main__ - INFO - Running experiment: Linear label predictor
+2026-03-26 02:53:14,497 - __main__ - INFO - ============================================================
+2026-03-26 02:53:14,497 - __main__ - INFO - Config: {'model': 'CARE', 'use_capn': False}
+2026-03-26 02:53:14,497 - train - INFO - Using device: cuda
+2026-03-26 02:53:14,498 - utils - INFO - Random seed set to 72
+2026-03-26 02:53:19,350 - utils - INFO - Loaded yelp dataset: 45954 nodes, 32 features
+2026-03-26 02:53:19,385 - train - INFO - Split: train=11488, val=6893, test=27573
+2026-03-26 02:53:19,405 - train - INFO - Model: CARE, Inter-AGG: GNN, emb_size: 64
+2026-03-26 02:53:23,973 - train - INFO - Epoch: 0, loss: 2.0766, lr: 0.010000, time: 4.56s
+2026-03-26 02:53:58,527 - utils - INFO - GNN F1: 0.5886, Acc: 0.8457, Recall: 0.5739, AUC: 0.7029, AP: 0.3143
+2026-03-26 02:53:58,527 - utils - INFO - Label F1: 0.4643, Acc: 0.8534, Recall: 0.5009, AUC: 0.5740, AP: 0.1835
+2026-03-26 02:54:07,145 - utils - INFO - GNN F1: 0.5910, Acc: 0.8469, Recall: 0.5758, AUC: 0.7176, AP: 0.3294
+2026-03-26 02:54:07,145 - utils - INFO - Label F1: 0.4613, Acc: 0.8536, Recall: 0.4995, AUC: 0.5919, AP: 0.1891
+2026-03-26 02:54:07,145 - train - INFO - Validation AUC: 0.7176
+2026-03-26 02:54:07,154 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:54:07,154 - train - INFO - New best model saved (AUC: 0.7176)
+2026-03-26 02:54:11,925 - train - INFO - Epoch: 1, loss: 2.0661, lr: 0.010000, time: 4.77s
+2026-03-26 02:54:13,211 - layers - INFO - RL update - scores: ['0.0014', '0.0040', '0.0043'], rewards: [-1, -1, -1], thresholds: ['0.4800', '0.4800', '0.4800']
+2026-03-26 02:54:16,821 - train - INFO - Epoch: 2, loss: 2.0588, lr: 0.010000, time: 4.89s
+2026-03-26 02:54:18,049 - layers - INFO - RL update - scores: ['0.0017', '0.0048', '0.0051'], rewards: [-1, -1, -1], thresholds: ['0.4600', '0.4600', '0.4600']
+2026-03-26 02:54:21,079 - train - INFO - Epoch: 3, loss: 2.0509, lr: 0.010000, time: 4.26s
+2026-03-26 02:54:57,594 - utils - INFO - GNN F1: 0.6083, Acc: 0.7484, Recall: 0.6536, AUC: 0.7243, AP: 0.3252
+2026-03-26 02:54:57,595 - utils - INFO - Label F1: 0.4566, Acc: 0.4925, Recall: 0.6258, AUC: 0.6896, AP: 0.2694
+2026-03-26 02:55:06,538 - utils - INFO - GNN F1: 0.6122, Acc: 0.7511, Recall: 0.6578, AUC: 0.7323, AP: 0.3311
+2026-03-26 02:55:06,538 - utils - INFO - Label F1: 0.4650, Acc: 0.5021, Recall: 0.6363, AUC: 0.7030, AP: 0.2777
+2026-03-26 02:55:06,539 - train - INFO - Validation AUC: 0.7323
+2026-03-26 02:55:06,550 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:55:06,551 - train - INFO - New best model saved (AUC: 0.7323)
+2026-03-26 02:55:07,867 - layers - INFO - RL update - scores: ['0.0020', '0.0057', '0.0059'], rewards: [-1, -1, -1], thresholds: ['0.4400', '0.4400', '0.4400']
+2026-03-26 02:55:11,076 - train - INFO - Epoch: 4, loss: 2.0409, lr: 0.010000, time: 4.52s
+2026-03-26 02:55:12,317 - layers - INFO - RL update - scores: ['0.0021', '0.0064', '0.0068'], rewards: [-1, -1, -1], thresholds: ['0.4200', '0.4200', '0.4200']
+2026-03-26 02:55:16,145 - train - INFO - Epoch: 5, loss: 2.0319, lr: 0.010000, time: 5.07s
+2026-03-26 02:55:17,419 - layers - INFO - RL update - scores: ['0.0025', '0.0073', '0.0076'], rewards: [-1, -1, -1], thresholds: ['0.4000', '0.4000', '0.4000']
+2026-03-26 02:55:20,574 - train - INFO - Epoch: 6, loss: 2.0214, lr: 0.010000, time: 4.43s

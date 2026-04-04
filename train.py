@@ -121,10 +121,21 @@ def parse_args():
     # label predictor
     parser.add_argument('--use-mlp-label', action='store_true', default=False, help='Use MLP label predictor without full CAPN policy network.')
 
-    # LLM semantic state enrichment
-    parser.add_argument('--use-llm-state', action='store_true', default=False, help='Enable LLM semantic state enrichment for CAPN.')
+    # LLM semantic state enrichment (v1)
+    parser.add_argument('--use-llm-state', action='store_true', default=False, help='Enable LLM semantic state enrichment for CAPN (v1 sentence-transformer).')
     parser.add_argument('--llm-embedding-path', type=str, default=None, help='Path to LLM embeddings (default: llm_embeddings/{data}/llm_semantic_embeddings.pt).')
     parser.add_argument('--llm-projection-dim', type=int, default=16, help='LLM embedding projection dimension.')
+
+    # v2 enrichment: direct graph features + Claude reasoning scores
+    parser.add_argument('--enrichment-mode', type=str, default='none',
+                        choices=['none', 'structural', 'reasoning', 'both'],
+                        help='v2 state enrichment mode: structural features, Claude reasoning scores, or both.')
+    parser.add_argument('--graph-features-path', type=str, default='',
+                        help='Path to node_statistics.npz (default: llm_embeddings/{data}/node_statistics.npz).')
+    parser.add_argument('--risk-scores-path', type=str, default='',
+                        help='Path to llm_risk_scores.pt (default: llm_embeddings/{data}/llm_risk_scores.pt).')
+    parser.add_argument('--structural-projection-dim', type=int, default=16,
+                        help='Projection dimension for v2 enrichment features.')
 
     return parser.parse_args()
 
@@ -250,15 +261,50 @@ def train(args):
             logger.info(f'LLM state enrichment: embeddings {llm_embeddings.shape}, '
                         f'projection {llm_input_dim} -> {args.llm_projection_dim}')
 
+        # v2 enrichment: graph structural features and/or Claude reasoning scores
+        enrichment_tensor = None
+        enrichment_projector = None
+        enrichment_dim = 0
+
+        if args.enrichment_mode in ('structural', 'both'):
+            from llm.graph_features import load_graph_features
+            gf_dir = os.path.dirname(args.graph_features_path) if args.graph_features_path else None
+            graph_features_tensor = load_graph_features(args.data, gf_dir).to(device)
+            logger.info(f'Loaded graph structural features: {graph_features_tensor.shape}')
+            enrichment_tensor = graph_features_tensor
+
+        if args.enrichment_mode in ('reasoning', 'both'):
+            rs_path = args.risk_scores_path or f'llm_embeddings/{args.data}/llm_risk_scores.pt'
+            if not os.path.exists(rs_path):
+                raise FileNotFoundError(
+                    f'Risk scores not found at {rs_path}. '
+                    f'Run: python -m llm.generate_risk_scores --data {args.data} --mode template')
+            risk_scores_tensor = torch.load(rs_path, weights_only=True).to(device)
+            logger.info(f'Loaded Claude reasoning scores: {risk_scores_tensor.shape}')
+            if enrichment_tensor is not None:
+                enrichment_tensor = torch.cat([enrichment_tensor, risk_scores_tensor], dim=1)
+            else:
+                enrichment_tensor = risk_scores_tensor
+
+        if enrichment_tensor is not None:
+            enrichment_dim = enrichment_tensor.shape[1]
+            enrichment_projector = LLMProjector(
+                input_dim=enrichment_dim,
+                projection_dim=args.structural_projection_dim).to(device)
+            logger.info(f'Enrichment projector: {enrichment_dim} -> {args.structural_projection_dim}')
+
         # state constructor
         state_constructor = StateConstructor(
             adj_lists, homo, features, device=device,
-            llm_embeddings=llm_embeddings, llm_projector=llm_projector)
+            llm_embeddings=llm_embeddings, llm_projector=llm_projector,
+            enrichment_tensor=enrichment_tensor, enrichment_projector=enrichment_projector)
 
-        # policy network (state_dim adjusts based on LLM enrichment)
+        # policy network (state_dim adjusts based on enrichment)
         state_dim = feat_data.shape[1] + 5
         if args.use_llm_state:
             state_dim += args.llm_projection_dim
+        if enrichment_dim > 0:
+            state_dim += args.structural_projection_dim
         policy_network = PolicyNetwork(
             state_dim, hidden_dim=args.policy_hidden,
             num_relations=len(adj_lists),
@@ -320,6 +366,9 @@ def train(args):
         if llm_projector is not None:
             policy_param_groups.append(
                 {'params': list(llm_projector.parameters()), 'lr': args.policy_lr})
+        if enrichment_projector is not None:
+            policy_param_groups.append(
+                {'params': list(enrichment_projector.parameters()), 'lr': args.policy_lr})
         optimizer = torch.optim.Adam(gnn_params, lr=args.lr, weight_decay=args.lambda_2)
         policy_optimizer = torch.optim.Adam(policy_param_groups)
         all_policy_params = [p for pg in policy_param_groups for p in pg['params']]

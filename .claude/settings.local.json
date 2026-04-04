@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(python -c \"from llm.projector import LLMProjector; print\\(''projector OK''\\); from llm.compute_node_statistics import compute_statistics; print\\(''stats OK''\\); from llm.generate_descriptions import generate_descriptions_template; print\\(''descriptions OK''\\)\")",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -c \"import torch; print\\(''torch'', torch.__version__\\); import numpy; print\\(''numpy'', numpy.__version__\\); import scipy; print\\(''scipy'', scipy.__version__\\)\")",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -c \"import sentence_transformers; print\\(''sbert OK''\\)\")",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -c \"import anthropic; print\\(''anthropic OK''\\)\")",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -m pip install sentence-transformers anthropic)",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -c \"from llm.projector import LLMProjector; from llm.compute_node_statistics import compute_statistics; from llm.generate_descriptions import generate_descriptions_template; from llm.encode_embeddings import encode_descriptions; print\\(''All imports OK''\\)\")",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -m llm.compute_node_statistics)",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -m llm.generate_descriptions --mode template)",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' -m llm.encode_embeddings)",
+      "Bash('C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe' train.py --data amazon --model CARE --use-capn --batch-size 256 --num-epochs 2 --test-epochs 1)",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe train.py --data amazon --model CARE --use-capn --batch-size 256 --num-epochs 4 --test-epochs 2)",
+      "Bash(tasklist)",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe train.py --data amazon --model CARE --use-capn --batch-size 256 --num-epochs 4 --test-epochs 3)",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -c \"from llm.compute_node_statistics import DATASET_CONFIG; print\\(''compute_node_statistics OK:'', list\\(DATASET_CONFIG.keys\\(\\)\\)\\)\")",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -c \"from llm.generate_descriptions import DATASET_CONFIG; print\\(''generate_descriptions OK:'', list\\(DATASET_CONFIG.keys\\(\\)\\)\\)\")",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -c \"from ablation import get_capn_llm_prior_experiments; print\\(''yelp:'', get_capn_llm_prior_experiments\\(''yelp''\\)\\); print\\(''amazon:'', get_capn_llm_prior_experiments\\(''amazon''\\)\\)\")",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -c \"import train; import utils; import ablation; print\\(''All imports OK''\\)\")",
+      "Bash(find C:/Users/fadyh/Downloads/CARE-GNN-claude/CARE-GNN/results -name *.json -newer C:/Users/fadyh/Downloads/CARE-GNN-claude/CARE-GNN/results/ablation/capn_llm/ablation_results_20260402_210351.json)",
+      "Bash(for d:*)",
+      "Bash(do echo:*)",
+      "Read(//c/Users/fadyh/Downloads/CARE-GNN-claude/CARE-GNN/results/ablation/amazon/**)",
+      "Bash(done)",
+      "Bash(\"C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe\" -c \":*)",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -m llm.compute_node_statistics --data amazon)",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -m llm.generate_risk_scores --data amazon --mode template)",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -m llm.compute_node_statistics --data yelp)",
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe train.py --data amazon --model CARE --use-capn --enrichment-mode structural --batch-size 256 --num-epoch 3)"
+    ]
+  }
+}

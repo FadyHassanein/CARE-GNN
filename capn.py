@@ -73,14 +73,17 @@ class StateConstructor:
     """
 
     def __init__(self, adj_lists, homo_adj, features, device=None,
-                 llm_embeddings=None, llm_projector=None):
+                 llm_embeddings=None, llm_projector=None,
+                 enrichment_tensor=None, enrichment_projector=None):
         """
         :param adj_lists: list of adjacency lists for each relation
         :param homo_adj: homogeneous graph adjacency list (for structural overlap)
         :param features: nn.Embedding for node features
         :param device: torch device
-        :param llm_embeddings: precomputed LLM semantic embeddings [N, 384] (optional)
-        :param llm_projector: LLMProjector module (optional, required if llm_embeddings given)
+        :param llm_embeddings: precomputed LLM semantic embeddings [N, 384] (optional, v1)
+        :param llm_projector: LLMProjector module (optional, v1)
+        :param enrichment_tensor: precomputed graph/reasoning features [N, D] (optional, v2)
+        :param enrichment_projector: LLMProjector module for v2 features (optional)
         """
         self.adj_lists = adj_lists
         self.homo_adj = homo_adj
@@ -89,6 +92,8 @@ class StateConstructor:
         self.num_relations = len(adj_lists)
         self.llm_embeddings = llm_embeddings
         self.llm_projector = llm_projector
+        self.enrichment_tensor = enrichment_tensor
+        self.enrichment_projector = enrichment_projector
 
         # precompute max degree per relation for normalization
         self.max_degrees = []
@@ -168,12 +173,19 @@ class StateConstructor:
             feat_vars,         # [batch, 1]
         ]
 
-        # LLM semantic embedding projection (optional)
+        # LLM semantic embedding projection (optional, v1)
         if self.llm_embeddings is not None and self.llm_projector is not None:
             node_indices = torch.LongTensor(nodes).to(self.llm_embeddings.device)
             llm_raw = self.llm_embeddings[node_indices]          # [batch, 384]
             llm_proj = self.llm_projector(llm_raw.to(self.device))  # [batch, projection_dim]
             components.append(llm_proj)
+
+        # v2 enrichment: graph structural features + Claude reasoning scores
+        if self.enrichment_tensor is not None and self.enrichment_projector is not None:
+            node_indices = torch.LongTensor(nodes).to(self.enrichment_tensor.device)
+            enrich_raw = self.enrichment_tensor[node_indices]
+            enrich_proj = self.enrichment_projector(enrich_raw.to(self.device))
+            components.append(enrich_proj)
 
         state = torch.cat(components, dim=1)
 

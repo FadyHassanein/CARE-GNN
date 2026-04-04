@@ -1,0 +1,70 @@
+{
+  "Linear predictor (CARE-GNN)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": false,
+      "use_mlp_label": false,
+      "name": "Linear predictor (CARE-GNN)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.6097849664858307,
+      "gnn_accuracy": 0.7131810440083128,
+      "gnn_recall": 0.7015350227965624,
+      "gnn_precision": 0.6114036155287418,
+      "gnn_auc": 0.7659924485063468,
+      "gnn_ap": 0.377932467966842,
+      "label_f1": 0.6144220030372957,
+      "label_accuracy": 0.7627440967953596,
+      "label_recall": 0.6506472428474512,
+      "label_precision": 0.6040748245604626,
+      "label_auc": 0.7304172470025814,
+      "label_ap": 0.3151233691474983
+    },
+    "elapsed_seconds": 593.1706829071045
+  },
+  "MLP predictor (no policy)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": false,
+      "use_mlp_label": true,
+      "name": "MLP predictor (no policy)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.6085704286528864,
+      "gnn_accuracy": 0.7106016125039027,
+      "gnn_recall": 0.7023114385879871,
+      "gnn_precision": 0.6112550765617746,
+      "gnn_auc": 0.765935600354719,
+      "gnn_ap": 0.3766176748274931,
+      "label_f1": 0.621230864778031,
+      "label_accuracy": 0.7426217183414315,
+      "label_recall": 0.6874946537250511,
+      "label_precision": 0.6133037382828703,
+      "label_auc": 0.7567551587711571,
+      "label_ap": 0.35062699231259326
+    },
+    "elapsed_seconds": 595.2496552467346
+  },
+  "MLP predictor + policy (CAPN)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "name": "MLP predictor + policy (CAPN)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.5858169079351693,
+      "gnn_accuracy": 0.6727002549589236,
+      "gnn_recall": 0.7010889779710362,
+      "gnn_precision": 0.604318267276471,
+      "gnn_auc": 0.7727142896212815,
+      "gnn_ap": 0.39968937952083294,
+      "label_f1": 0.58430572823154,
+      "label_accuracy": 0.6744944117589666,
+      "label_recall": 0.6936150427245319,
+      "label_precision": 0.6011025051886877,
+      "label_auc": 0.7578647834248542,
+      "label_ap": 0.35396299616339405
+    },
+    "elapsed_seconds": 1398.9246215820312
+  }
+}

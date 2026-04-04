@@ -1,0 +1,186 @@
+2026-03-26 02:29:08,032 - __main__ - INFO - 
+
+Starting study: capn
+2026-03-26 02:29:08,032 - __main__ - INFO - 
+============================================================
+2026-03-26 02:29:08,032 - __main__ - INFO - Running experiment: CARE-GNN (original RL)
+2026-03-26 02:29:08,032 - __main__ - INFO - ============================================================
+2026-03-26 02:29:08,032 - __main__ - INFO - Config: {'model': 'CARE', 'use_capn': False}
+2026-03-26 02:29:09,301 - train - INFO - Using device: cuda
+2026-03-26 02:29:09,312 - utils - INFO - Random seed set to 72
+2026-03-26 02:29:14,493 - utils - INFO - Loaded yelp dataset: 45954 nodes, 32 features
+2026-03-26 02:29:14,547 - train - INFO - Split: train=11488, val=6893, test=27573
+2026-03-26 02:29:14,698 - train - INFO - Model: CARE, Inter-AGG: GNN, emb_size: 64
+2026-03-26 02:29:22,324 - train - INFO - Epoch: 0, loss: 2.0766, lr: 0.010000, time: 4.63s
+2026-03-26 02:29:55,116 - utils - INFO - GNN F1: 0.5886, Acc: 0.8457, Recall: 0.5739, AUC: 0.7029, AP: 0.3143
+2026-03-26 02:29:55,117 - utils - INFO - Label F1: 0.4643, Acc: 0.8534, Recall: 0.5009, AUC: 0.5740, AP: 0.1835
+2026-03-26 02:30:03,165 - utils - INFO - GNN F1: 0.5910, Acc: 0.8469, Recall: 0.5758, AUC: 0.7176, AP: 0.3294
+2026-03-26 02:30:03,165 - utils - INFO - Label F1: 0.4613, Acc: 0.8536, Recall: 0.4995, AUC: 0.5919, AP: 0.1891
+2026-03-26 02:30:03,165 - train - INFO - Validation AUC: 0.7176
+2026-03-26 02:30:03,179 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:30:03,179 - train - INFO - New best model saved (AUC: 0.7176)
+2026-03-26 02:30:08,204 - train - INFO - Epoch: 1, loss: 2.0661, lr: 0.010000, time: 5.02s
+2026-03-26 02:30:09,448 - layers - INFO - RL update - scores: ['0.0014', '0.0040', '0.0043'], rewards: [-1, -1, -1], thresholds: ['0.4800', '0.4800', '0.4800']
+2026-03-26 02:30:12,384 - train - INFO - Epoch: 2, loss: 2.0588, lr: 0.010000, time: 4.18s
+2026-03-26 02:30:13,615 - layers - INFO - RL update - scores: ['0.0017', '0.0048', '0.0051'], rewards: [-1, -1, -1], thresholds: ['0.4600', '0.4600', '0.4600']
+2026-03-26 02:30:16,350 - train - INFO - Epoch: 3, loss: 2.0509, lr: 0.010000, time: 3.96s
+2026-03-26 02:30:49,025 - utils - INFO - GNN F1: 0.6083, Acc: 0.7484, Recall: 0.6536, AUC: 0.7243, AP: 0.3252
+2026-03-26 02:30:49,025 - utils - INFO - Label F1: 0.4566, Acc: 0.4925, Recall: 0.6258, AUC: 0.6896, AP: 0.2694
+2026-03-26 02:30:56,794 - utils - INFO - GNN F1: 0.6122, Acc: 0.7511, Recall: 0.6578, AUC: 0.7323, AP: 0.3311
+2026-03-26 02:30:56,794 - utils - INFO - Label F1: 0.4650, Acc: 0.5021, Recall: 0.6363, AUC: 0.7030, AP: 0.2777
+2026-03-26 02:30:56,794 - train - INFO - Validation AUC: 0.7323
+2026-03-26 02:30:56,803 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:30:56,803 - train - INFO - New best model saved (AUC: 0.7323)
+2026-03-26 02:30:58,052 - layers - INFO - RL update - scores: ['0.0020', '0.0057', '0.0059'], rewards: [-1, -1, -1], thresholds: ['0.4400', '0.4400', '0.4400']
+2026-03-26 02:31:01,054 - train - INFO - Epoch: 4, loss: 2.0409, lr: 0.010000, time: 4.25s
+2026-03-26 02:31:02,489 - layers - INFO - RL update - scores: ['0.0021', '0.0064', '0.0068'], rewards: [-1, -1, -1], thresholds: ['0.4200', '0.4200', '0.4200']
+2026-03-26 02:31:05,404 - train - INFO - Epoch: 5, loss: 2.0319, lr: 0.010000, time: 4.35s
+2026-03-26 02:31:06,647 - layers - INFO - RL update - scores: ['0.0025', '0.0073', '0.0076'], rewards: [-1, -1, -1], thresholds: ['0.4000', '0.4000', '0.4000']
+2026-03-26 02:31:09,504 - train - INFO - Epoch: 6, loss: 2.0214, lr: 0.010000, time: 4.10s
+2026-03-26 02:31:41,901 - utils - INFO - GNN F1: 0.5481, Acc: 0.6273, Recall: 0.6662, AUC: 0.7316, AP: 0.3273
+2026-03-26 02:31:41,901 - utils - INFO - Label F1: 0.5886, Acc: 0.8272, Recall: 0.5785, AUC: 0.7124, AP: 0.2928
+2026-03-26 02:31:49,784 - utils - INFO - GNN F1: 0.5579, Acc: 0.6385, Recall: 0.6765, AUC: 0.7361, AP: 0.3313
+2026-03-26 02:31:49,784 - utils - INFO - Label F1: 0.5938, Acc: 0.8290, Recall: 0.5823, AUC: 0.7212, AP: 0.2993
+2026-03-26 02:31:49,785 - train - INFO - Validation AUC: 0.7361
+2026-03-26 02:31:49,794 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:31:49,794 - train - INFO - New best model saved (AUC: 0.7361)
+2026-03-26 02:31:50,987 - layers - INFO - RL update - scores: ['0.0028', '0.0079', '0.0084'], rewards: [-1, -1, -1], thresholds: ['0.3800', '0.3800', '0.3800']
+2026-03-26 02:31:54,806 - train - INFO - Epoch: 7, loss: 2.0098, lr: 0.010000, time: 5.01s
+2026-03-26 02:31:55,982 - layers - INFO - RL update - scores: ['0.0032', '0.0083', '0.0089'], rewards: [-1, -1, -1], thresholds: ['0.3600', '0.3600', '0.3600']
+2026-03-26 02:31:58,723 - train - INFO - Epoch: 8, loss: 1.9974, lr: 0.010000, time: 3.91s
+2026-03-26 02:32:00,258 - layers - INFO - RL update - scores: ['0.0036', '0.0089', '0.0095'], rewards: [-1, -1, -1], thresholds: ['0.3400', '0.3400', '0.3400']
+2026-03-26 02:32:03,378 - train - INFO - Epoch: 9, loss: 1.9867, lr: 0.010000, time: 4.65s
+2026-03-26 02:32:35,147 - utils - INFO - GNN F1: 0.5866, Acc: 0.6902, Recall: 0.6757, AUC: 0.7408, AP: 0.3369
+2026-03-26 02:32:35,148 - utils - INFO - Label F1: 0.5420, Acc: 0.6193, Recall: 0.6611, AUC: 0.7196, AP: 0.3016
+2026-03-26 02:32:43,622 - utils - INFO - GNN F1: 0.5935, Acc: 0.6968, Recall: 0.6838, AUC: 0.7446, AP: 0.3408
+2026-03-26 02:32:43,623 - utils - INFO - Label F1: 0.5518, Acc: 0.6313, Recall: 0.6702, AUC: 0.7270, AP: 0.3074
+2026-03-26 02:32:43,623 - train - INFO - Validation AUC: 0.7446
+2026-03-26 02:32:43,633 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:32:43,633 - train - INFO - New best model saved (AUC: 0.7446)
+2026-03-26 02:32:44,782 - layers - INFO - RL update - scores: ['0.0040', '0.0092', '0.0098'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.3200', '0.3200']
+2026-03-26 02:32:47,636 - train - INFO - Epoch: 10, loss: 1.9795, lr: 0.010000, time: 4.00s
+2026-03-26 02:32:49,028 - layers - INFO - RL update - scores: ['0.0034', '0.0096', '0.0102'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.3000', '0.3000']
+2026-03-26 02:32:52,212 - train - INFO - Epoch: 11, loss: 1.9650, lr: 0.010000, time: 4.57s
+2026-03-26 02:32:53,523 - layers - INFO - RL update - scores: ['0.0039', '0.0098', '0.0106'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2800', '0.2800']
+2026-03-26 02:32:56,439 - train - INFO - Epoch: 12, loss: 1.9748, lr: 0.010000, time: 4.22s
+2026-03-26 02:33:28,141 - utils - INFO - GNN F1: 0.5689, Acc: 0.6524, Recall: 0.6858, AUC: 0.7490, AP: 0.3447
+2026-03-26 02:33:28,141 - utils - INFO - Label F1: 0.5032, Acc: 0.5561, Recall: 0.6546, AUC: 0.7216, AP: 0.3050
+2026-03-26 02:33:35,884 - utils - INFO - GNN F1: 0.5754, Acc: 0.6616, Recall: 0.6893, AUC: 0.7531, AP: 0.3508
+2026-03-26 02:33:35,885 - utils - INFO - Label F1: 0.5098, Acc: 0.5645, Recall: 0.6609, AUC: 0.7284, AP: 0.3103
+2026-03-26 02:33:35,885 - train - INFO - Validation AUC: 0.7531
+2026-03-26 02:33:35,894 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:33:35,894 - train - INFO - New best model saved (AUC: 0.7531)
+2026-03-26 02:33:37,048 - layers - INFO - RL update - scores: ['0.0036', '0.0098', '0.0105'], rewards: [1, -1, 1], thresholds: ['0.3400', '0.2600', '0.3000']
+2026-03-26 02:33:39,946 - train - INFO - Epoch: 13, loss: 1.9595, lr: 0.010000, time: 4.05s
+2026-03-26 02:33:41,414 - layers - INFO - RL update - scores: ['0.0047', '0.0100', '0.0119'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:33:44,248 - train - INFO - Epoch: 14, loss: 1.9493, lr: 0.010000, time: 4.30s
+2026-03-26 02:33:45,755 - layers - INFO - RL update - scores: ['0.0042', '0.0098', '0.0124'], rewards: [1, 1, -1], thresholds: ['0.3400', '0.2600', '0.2600']
+2026-03-26 02:33:48,393 - train - INFO - Epoch: 15, loss: 1.9546, lr: 0.010000, time: 4.14s
+2026-03-26 02:34:19,219 - utils - INFO - GNN F1: 0.5199, Acc: 0.5736, Recall: 0.6783, AUC: 0.7587, AP: 0.3663
+2026-03-26 02:34:19,219 - utils - INFO - Label F1: 0.6011, Acc: 0.7336, Recall: 0.6548, AUC: 0.7218, AP: 0.3064
+2026-03-26 02:34:27,453 - utils - INFO - GNN F1: 0.5275, Acc: 0.5840, Recall: 0.6832, AUC: 0.7639, AP: 0.3728
+2026-03-26 02:34:27,453 - utils - INFO - Label F1: 0.6053, Acc: 0.7375, Recall: 0.6587, AUC: 0.7286, AP: 0.3125
+2026-03-26 02:34:27,453 - train - INFO - Validation AUC: 0.7639
+2026-03-26 02:34:27,463 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:34:27,463 - train - INFO - New best model saved (AUC: 0.7639)
+2026-03-26 02:34:28,637 - layers - INFO - RL update - scores: ['0.0057', '0.0110', '0.0123'], rewards: [-1, -1, 1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:34:31,494 - train - INFO - Epoch: 16, loss: 1.9559, lr: 0.010000, time: 4.03s
+2026-03-26 02:34:33,311 - layers - INFO - RL update - scores: ['0.0053', '0.0111', '0.0137'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:34:35,922 - train - INFO - Epoch: 17, loss: 1.9407, lr: 0.010000, time: 4.43s
+2026-03-26 02:34:37,091 - layers - INFO - RL update - scores: ['0.0058', '0.0103', '0.0133'], rewards: [-1, 1, 1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:34:39,782 - train - INFO - Epoch: 18, loss: 1.9422, lr: 0.010000, time: 3.86s
+2026-03-26 02:35:10,838 - utils - INFO - GNN F1: 0.6134, Acc: 0.7227, Recall: 0.6966, AUC: 0.7602, AP: 0.3646
+2026-03-26 02:35:10,839 - utils - INFO - Label F1: 0.5896, Acc: 0.7064, Recall: 0.6614, AUC: 0.7230, AP: 0.3082
+2026-03-26 02:35:19,077 - utils - INFO - GNN F1: 0.6138, Acc: 0.7233, Recall: 0.6965, AUC: 0.7657, AP: 0.3729
+2026-03-26 02:35:19,077 - utils - INFO - Label F1: 0.5939, Acc: 0.7108, Recall: 0.6652, AUC: 0.7295, AP: 0.3142
+2026-03-26 02:35:19,078 - train - INFO - Validation AUC: 0.7657
+2026-03-26 02:35:19,087 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:35:19,087 - train - INFO - New best model saved (AUC: 0.7657)
+2026-03-26 02:35:20,234 - layers - INFO - RL update - scores: ['0.0053', '0.0120', '0.0149'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:35:23,278 - train - INFO - Epoch: 19, loss: 1.9454, lr: 0.010000, time: 4.19s
+2026-03-26 02:35:24,435 - layers - INFO - RL update - scores: ['0.0069', '0.0116', '0.0148'], rewards: [-1, 1, 1], thresholds: ['0.3200', '0.2400', '0.2800']
+2026-03-26 02:35:27,649 - train - INFO - Epoch: 20, loss: 1.9418, lr: 0.010000, time: 4.37s
+2026-03-26 02:35:28,862 - layers - INFO - RL update - scores: ['0.0059', '0.0127', '0.0160'], rewards: [1, -1, -1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:35:31,800 - train - INFO - Epoch: 21, loss: 1.9314, lr: 0.010000, time: 4.15s
+2026-03-26 02:36:03,742 - utils - INFO - GNN F1: 0.5613, Acc: 0.6354, Recall: 0.6934, AUC: 0.7644, AP: 0.3741
+2026-03-26 02:36:03,742 - utils - INFO - Label F1: 0.5376, Acc: 0.6097, Recall: 0.6646, AUC: 0.7257, AP: 0.3110
+2026-03-26 02:36:11,650 - utils - INFO - GNN F1: 0.5649, Acc: 0.6409, Recall: 0.6944, AUC: 0.7687, AP: 0.3792
+2026-03-26 02:36:11,650 - utils - INFO - Label F1: 0.5423, Acc: 0.6154, Recall: 0.6693, AUC: 0.7314, AP: 0.3168
+2026-03-26 02:36:11,650 - train - INFO - Validation AUC: 0.7687
+2026-03-26 02:36:11,661 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:36:11,661 - train - INFO - New best model saved (AUC: 0.7687)
+2026-03-26 02:36:12,870 - layers - INFO - RL update - scores: ['0.0073', '0.0130', '0.0166'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2400']
+2026-03-26 02:36:15,751 - train - INFO - Epoch: 22, loss: 1.9351, lr: 0.010000, time: 4.09s
+2026-03-26 02:36:16,892 - layers - INFO - RL update - scores: ['0.0064', '0.0121', '0.0159'], rewards: [1, 1, 1], thresholds: ['0.3400', '0.2200', '0.2600']
+2026-03-26 02:36:20,071 - train - INFO - Epoch: 23, loss: 1.9326, lr: 0.010000, time: 4.32s
+2026-03-26 02:36:21,253 - layers - INFO - RL update - scores: ['0.0080', '0.0132', '0.0169'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2400']
+2026-03-26 02:36:23,909 - train - INFO - Epoch: 24, loss: 1.9385, lr: 0.010000, time: 3.84s
+2026-03-26 02:36:55,438 - utils - INFO - GNN F1: 0.6261, Acc: 0.7457, Recall: 0.6946, AUC: 0.7636, AP: 0.3691
+2026-03-26 02:36:55,438 - utils - INFO - Label F1: 0.4388, Acc: 0.4635, Recall: 0.6352, AUC: 0.7282, AP: 0.3134
+2026-03-26 02:37:03,588 - utils - INFO - GNN F1: 0.6260, Acc: 0.7454, Recall: 0.6945, AUC: 0.7679, AP: 0.3751
+2026-03-26 02:37:03,588 - utils - INFO - Label F1: 0.4472, Acc: 0.4739, Recall: 0.6422, AUC: 0.7332, AP: 0.3192
+2026-03-26 02:37:03,589 - train - INFO - Validation AUC: 0.7679
+2026-03-26 02:37:04,766 - layers - INFO - RL update - scores: ['0.0069', '0.0128', '0.0170'], rewards: [1, 1, -1], thresholds: ['0.3400', '0.2200', '0.2200']
+2026-03-26 02:37:07,375 - train - INFO - Epoch: 25, loss: 1.9299, lr: 0.010000, time: 3.78s
+2026-03-26 02:37:08,565 - layers - INFO - RL update - scores: ['0.0075', '0.0138', '0.0159'], rewards: [-1, -1, 1], thresholds: ['0.3200', '0.2000', '0.2400']
+2026-03-26 02:37:11,363 - train - INFO - Epoch: 26, loss: 1.9419, lr: 0.010000, time: 3.98s
+2026-03-26 02:37:12,884 - layers - INFO - RL update - scores: ['0.0072', '0.0133', '0.0169'], rewards: [1, 1, -1], thresholds: ['0.3400', '0.2200', '0.2200']
+2026-03-26 02:37:15,594 - train - INFO - Epoch: 27, loss: 1.9225, lr: 0.010000, time: 4.23s
+2026-03-26 02:37:46,103 - utils - INFO - GNN F1: 0.6098, Acc: 0.7132, Recall: 0.7015, AUC: 0.7660, AP: 0.3779
+2026-03-26 02:37:46,103 - utils - INFO - Label F1: 0.6144, Acc: 0.7627, Recall: 0.6506, AUC: 0.7304, AP: 0.3151
+2026-03-26 02:37:54,073 - utils - INFO - GNN F1: 0.6110, Acc: 0.7150, Recall: 0.7019, AUC: 0.7705, AP: 0.3819
+2026-03-26 02:37:54,073 - utils - INFO - Label F1: 0.6150, Acc: 0.7648, Recall: 0.6496, AUC: 0.7347, AP: 0.3204
+2026-03-26 02:37:54,074 - train - INFO - Validation AUC: 0.7705
+2026-03-26 02:37:54,083 - utils - INFO - Checkpoint saved to checkpoints\best_CARE_yelp.pt
+2026-03-26 02:37:54,083 - train - INFO - New best model saved (AUC: 0.7705)
+2026-03-26 02:37:55,183 - layers - INFO - RL update - scores: ['0.0081', '0.0146', '0.0171'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2000']
+2026-03-26 02:37:57,883 - train - INFO - Epoch: 28, loss: 1.9271, lr: 0.010000, time: 3.80s
+2026-03-26 02:37:59,067 - layers - INFO - RL update - scores: ['0.0079', '0.0139', '0.0157'], rewards: [1, 1, 1], thresholds: ['0.3400', '0.2200', '0.2200']
+2026-03-26 02:38:02,149 - train - INFO - Epoch: 29, loss: 1.9353, lr: 0.010000, time: 4.26s
+2026-03-26 02:38:03,867 - layers - INFO - RL update - scores: ['0.0087', '0.0151', '0.0171'], rewards: [-1, -1, -1], thresholds: ['0.3200', '0.2000', '0.2000']
+2026-03-26 02:38:06,572 - train - INFO - Epoch: 30, loss: 1.9148, lr: 0.010000, time: 4.42s
+2026-03-26 02:38:37,169 - utils - INFO - GNN F1: 0.5830, Acc: 0.6701, Recall: 0.6974, AUC: 0.7646, AP: 0.3725
+2026-03-26 02:38:37,169 - utils - INFO - Label F1: 0.5498, Acc: 0.6269, Recall: 0.6720, AUC: 0.7325, AP: 0.3173
+2026-03-26 02:38:44,804 - utils - INFO - GNN F1: 0.5855, Acc: 0.6736, Recall: 0.6987, AUC: 0.7693, AP: 0.3778
+2026-03-26 02:38:44,805 - utils - INFO - Label F1: 0.5580, Acc: 0.6363, Recall: 0.6809, AUC: 0.7362, AP: 0.3224
+2026-03-26 02:38:44,805 - train - INFO - Validation AUC: 0.7693
+2026-03-26 02:38:44,805 - train - INFO - Training complete.
+2026-03-26 02:38:44,953 - __main__ - INFO - Experiment CARE-GNN (original RL) completed in 576.9s
+2026-03-26 02:38:44,953 - __main__ - INFO - Best GNN AUC: 0.7659924485063468
+2026-03-26 02:38:44,953 - __main__ - INFO - 
+============================================================
+2026-03-26 02:38:44,953 - __main__ - INFO - Running experiment: CAPN (policy network)
+2026-03-26 02:38:44,954 - __main__ - INFO - ============================================================
+2026-03-26 02:38:44,954 - __main__ - INFO - Config: {'model': 'CARE', 'use_capn': True}
+2026-03-26 02:38:44,954 - train - INFO - Using device: cuda
+2026-03-26 02:38:44,962 - utils - INFO - Random seed set to 72
+2026-03-26 02:38:49,313 - utils - INFO - Loaded yelp dataset: 45954 nodes, 32 features
+2026-03-26 02:38:49,347 - train - INFO - Split: train=11488, val=6893, test=27573
+2026-03-26 02:38:49,369 - train - INFO - Model: CARE, Inter-AGG: GNN, emb_size: 64
+2026-03-26 02:38:49,382 - train - INFO - CAPN mode enabled: policy_hidden=64, policy_lr=0.001, lambda_policy=0.1
+2026-03-26 02:38:49,384 - train - INFO - Dual optimizer: GNN params=3618, Policy params=4710
+2026-03-26 02:38:49,929 - __main__ - ERROR - Experiment CAPN (policy network) failed: Expected parameter concentration (Tensor of shape (1024, 2)) of distribution Dirichlet(concentration: torch.Size([1024, 2])) to satisfy the constraint IndependentConstraint(GreaterThan(lower_bound=0.0), 1), but found invalid values:
+tensor([[   nan,    nan],
+        [1.2656, 1.1075],
+        [   nan,    nan],
+        ...,
+        [   nan,    nan],
+        [   nan,    nan],
+        [   nan,    nan]], device='cuda:0', grad_fn=<StackBackward0>)
+2026-03-26 02:38:50,200 - __main__ - INFO - Results saved to results/ablation\capn\ablation_results_20260326_023850.json
+2026-03-26 02:38:50,410 - __main__ - INFO - 
+
+Starting study: capn_label
+2026-03-26 02:38:50,411 - __main__ - INFO - 
+============================================================
+2026-03-26 02:38:50,411 - __main__ - INFO - Running experiment: Linear label predictor
+2026-03-26 02:38:50,411 - __main__ - INFO - ============================================================
+2026-03-26 02:38:50,411 - __main__ - INFO - Config: {'model': 'CARE', 'use_capn': False}
+2026-03-26 02:38:50,411 - train - INFO - Using device: cuda
+2026-03-26 02:38:50,412 - utils - INFO - Random seed set to 72
+2026-03-26 02:38:55,087 - utils - INFO - Loaded yelp dataset: 45954 nodes, 32 features
+2026-03-26 02:38:55,122 - train - INFO - Split: train=11488, val=6893, test=27573
+2026-03-26 02:38:55,143 - train - INFO - Model: CARE, Inter-AGG: GNN, emb_size: 64
+2026-03-26 02:38:59,739 - train - INFO - Epoch: 0, loss: 2.0766, lr: 0.010000, time: 4.59s
+2026-03-26 02:39:31,925 - utils - INFO - GNN F1: 0.5886, Acc: 0.8457, Recall: 0.5739, AUC: 0.7029, AP: 0.3143
+2026-03-26 02:39:31,925 - utils - INFO - Label F1: 0.4643, Acc: 0.8534, Recall: 0.5009, AUC: 0.5740, AP: 0.1835

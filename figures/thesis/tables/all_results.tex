@@ -1,0 +1,58 @@
+\begin{table}[ht]
+\centering
+\caption{Capn Results}
+\label{tab:capn}
+\begin{tabular}{lcccc}
+\toprule
+Method & AUC-ROC & AP & F1 (macro) & Recall (macro) \\
+\midrule
+CARE-GNN (original RL) & 0.7537 & 0.3448 & \textbf{0.1326} & \textbf{0.5025} \\
+CAPN (policy network) & \textbf{0.7643} & \textbf{0.3770} & 0.1325 & 0.5024 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Capn Label Results}
+\label{tab:capn_label}
+\begin{tabular}{lcccc}
+\toprule
+Method & AUC-ROC & AP & F1 (macro) & Recall (macro) \\
+\midrule
+Linear label predictor & 0.7537 & 0.3448 & \textbf{0.1326} & \textbf{0.5025} \\
+MLP label predictor (CAPN) & \textbf{0.7643} & \textbf{0.3770} & 0.1325 & 0.5024 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Capn Llm Results}
+\label{tab:capn_llm}
+\begin{tabular}{lcccc}
+\toprule
+Method & AUC-ROC & AP & F1 (macro) & Recall (macro) \\
+\midrule
+CAPN (no priors) & \textbf{0.7643} & \textbf{0.3770} & 0.1325 & 0.5024 \\
+CAPN (LLM priors) & 0.7615 & 0.3657 & \textbf{0.1354} & \textbf{0.5035} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Capn Reward Results}
+\label{tab:capn_reward}
+\begin{tabular}{lcccc}
+\toprule
+Method & AUC-ROC & AP & F1 (macro) & Recall (macro) \\
+\midrule
+Binary reward (original) & 0.7660 & 0.3779 & \textbf{0.6098} & \textbf{0.7015} \\
+Shaped reward (CAPN) & \textbf{0.7723} & \textbf{0.3987} & 0.5827 & 0.7013 \\
+Shaped (dist only) & 0.7723 & 0.3987 & 0.5827 & 0.7013 \\
+Shaped (acc only) & 0.7723 & 0.3987 & 0.5827 & 0.7013 \\
+\bottomrule
+\end{tabular}
+\end{table}
+

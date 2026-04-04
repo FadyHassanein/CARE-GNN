@@ -1,0 +1,48 @@
+{
+  "CAPN (base state)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "use_llm_state": false,
+      "name": "CAPN (base state)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.5858169079351693,
+      "gnn_accuracy": 0.6727002549589236,
+      "gnn_recall": 0.7010889779710362,
+      "gnn_precision": 0.604318267276471,
+      "gnn_auc": 0.7727142896212815,
+      "gnn_ap": 0.39968937952083294,
+      "label_f1": 0.58430572823154,
+      "label_accuracy": 0.6744944117589666,
+      "label_recall": 0.6936150427245319,
+      "label_precision": 0.6011025051886877,
+      "label_auc": 0.7578647834248542,
+      "label_ap": 0.35396299616339405
+    },
+    "elapsed_seconds": 1396.2436046600342
+  },
+  "CAPN (LLM state)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "use_llm_state": true,
+      "name": "CAPN (LLM state)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.5868946202901542,
+      "gnn_accuracy": 0.6754633898255474,
+      "gnn_recall": 0.699433193686096,
+      "gnn_precision": 0.6039479463377582,
+      "gnn_auc": 0.7686948700299998,
+      "gnn_ap": 0.3866994407913754,
+      "label_f1": 0.5833325852477022,
+      "label_accuracy": 0.6733788902426531,
+      "label_recall": 0.6927050885594631,
+      "label_precision": 0.6005468029955523,
+      "label_auc": 0.7575734035472442,
+      "label_ap": 0.35398281014762123
+    },
+    "elapsed_seconds": 1411.7634856700897
+  }
+}

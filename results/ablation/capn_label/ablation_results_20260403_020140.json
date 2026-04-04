@@ -1,0 +1,46 @@
+{
+  "Linear label predictor": {
+    "config": {
+      "model": "CARE",
+      "use_capn": false,
+      "name": "Linear label predictor"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.8815300330513837,
+      "gnn_accuracy": 0.9576822916666666,
+      "gnn_recall": 0.8889615768125152,
+      "gnn_precision": 0.8750786363026343,
+      "gnn_auc": 0.9345989882659081,
+      "gnn_ap": 0.838894280696599,
+      "label_f1": 0.6062245706559869,
+      "label_accuracy": 0.732421875,
+      "label_recall": 0.788797311470641,
+      "label_precision": 0.6136543862891916,
+      "label_auc": 0.8709721217488237,
+      "label_ap": 0.7338711164280298
+    },
+    "elapsed_seconds": 168.3672616481781
+  },
+  "MLP label predictor (CAPN)": {
+    "config": {
+      "model": "CARE",
+      "use_capn": true,
+      "name": "MLP label predictor (CAPN)"
+    },
+    "best_metrics": {
+      "gnn_f1": 0.8785218577674853,
+      "gnn_accuracy": 0.95654296875,
+      "gnn_recall": 0.8875616256075793,
+      "gnn_precision": 0.8705225453554054,
+      "gnn_auc": 0.9223228805926329,
+      "gnn_ap": 0.8282838651600136,
+      "label_f1": 0.8874712858976973,
+      "label_accuracy": 0.9597981770833334,
+      "label_recall": 0.8942164222880526,
+      "label_precision": 0.8815529107659302,
+      "label_auc": 0.9041697817624098,
+      "label_ap": 0.8209500291089684
+    },
+    "elapsed_seconds": 1302.8193135261536
+  }
+}

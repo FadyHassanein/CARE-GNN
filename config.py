@@ -78,7 +78,13 @@ class CareConfig:
     gamma_init: float = 0.7
     llm_priors_file: str = ''
 
-    # LLM semantic state enrichment
+    # LLM semantic state enrichment (v1 — sentence-transformer, kept for backward compat)
     use_llm_state: bool = False
     llm_embedding_path: str = ''  # default resolved at runtime: llm_embeddings/{data}/llm_semantic_embeddings.pt
     llm_projection_dim: int = 16
+
+    # v2 enrichment: direct graph features + Claude reasoning scores
+    enrichment_mode: str = 'none'  # 'none', 'structural', 'reasoning', 'both'
+    graph_features_path: str = ''  # resolved at runtime: llm_embeddings/{data}/node_statistics.npz
+    risk_scores_path: str = ''     # resolved at runtime: llm_embeddings/{data}/llm_risk_scores.pt
+    structural_projection_dim: int = 16
