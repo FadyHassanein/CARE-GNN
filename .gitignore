@@ -1,10 +1,39 @@
-
+# IDE
 *.xml
-.idea/$CACHE_FILE$
+.idea/
 *.iml
-.idea/dictionaries
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.env.*
+env/
+venv/
+.venv/
+*.env
+
+# Data & models
 *.mat
 *.pickle
+*.pkl
+data/
+llm_embeddings/
+checkpoints/
+
+# Results & logs
+results/
+logs/
+figures/
+
+# Misc
 backup.py
-__pycache__/
-.env
+*.DS_Store
+Thumbs.db
