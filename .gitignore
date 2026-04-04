@@ -7,3 +7,4 @@
 *.pickle
 backup.py
 __pycache__/
+.env
