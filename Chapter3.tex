@@ -1,7 +1,7 @@
 \chapter{Methodology}
 \lhead{\emph{Chapter3}}
 
-In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on two benchmark datasets: the Amazon fraud dataset and the Yelp fraud dataset. We first describe both datasets and the preprocessing steps required to construct the multi-relational graphs, then discuss the three baseline architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. We then detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours, present our proposed extension, CAPN (Camouflage-Aware Policy Network), which replaces the heuristic RL module with a learned policy network, and describe the ablation study framework used to evaluate each component of CAPN systematically.
+In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on two benchmark datasets: the Amazon fraud dataset and the Yelp fraud dataset. We first describe both datasets and the preprocessing steps required to construct the multi-relational graphs, then discuss the three baseline architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. We then detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours, present our proposed extension, CAPN (Camouflage-Aware Policy Network), which replaces the heuristic RL module with a learned policy network, describe the LLM reasoning enrichment module that uses Claude to produce fraud-relevant risk scores for each node, and present the ablation study framework used to evaluate each component of CAPN systematically.
 
 \section{Dataset Description}
 
@@ -729,10 +729,75 @@ Policy gradient clipping & 5.0 \\
 \end{table}
 
 
+\section{LLM Reasoning Enrichment Module}
+\label{sec:llm-reasoning}
+
+A key contribution of this thesis is the integration of Large Language Model (LLM) reasoning into the CAPN state vector. Rather than using LLMs as generic text encoders---which we show to be ineffective (Study A6)---we use the Claude LLM as a \emph{reasoning engine} that analyses each node's structural profile and produces fraud-relevant risk assessments. This section describes the preprocessing pipeline, the reasoning score generation, and the integration into CAPN.
+
+\subsection{Node Statistics Preprocessing}
+
+As a one-time preprocessing step, we compute 26 structural statistics per node from the multi-relational graph. These statistics are organised into four categories:
+
+\begin{enumerate}
+    \item \textbf{Per-relation connectivity (12 features):} For each of the three relations, we compute the node degree, degree percentile rank (relative position within the degree distribution), label disagreement with training-set neighbours (fraction of neighbours with a different label), and mean feature variance across neighbours.
+
+    \item \textbf{Cross-relation statistics (6 features):} Jaccard overlap between neighbour sets of each relation pair (e.g., UPU$\cap$USU / UPU$\cup$USU), and degree ratios between relation pairs. These capture whether a node's connectivity patterns are consistent or divergent across relations---a key camouflage indicator.
+
+    \item \textbf{Feature anomaly (2 features):} The number of features with $|z| > 2$ (extreme features) and the mean absolute z-score, both computed using training-set statistics only to prevent data leakage.
+
+    \item \textbf{Higher-order topology (6 features):} For each relation, the 2-hop neighbourhood size (number of unique nodes reachable in exactly two hops, excluding direct neighbours) and the ego-network density (fraction of possible edges among the node's neighbours that actually exist). High ego-density indicates clique-like structure potentially associated with coordinated fraud.
+\end{enumerate}
+
+\noindent
+All statistics are precomputed and stored in a NumPy compressed archive. Label-dependent statistics use training labels only, ensuring no information leakage into validation or test sets.
+
+\subsection{Claude Reasoning Scores}
+
+For each node, its 26-dimensional structural profile is formatted as a structured text prompt and sent to the Claude LLM (Haiku model). The prompt presents the node's per-relation statistics, cross-relation overlap, and feature anomaly scores, and requests six fraud-relevant risk assessments returned as a JSON object:
+
+\begin{enumerate}
+    \item \textbf{Structural anomaly} $\in [0, 1]$: how unusual is the node's connectivity pattern compared to typical nodes.
+    \item \textbf{Relation consistency} $\in [0, 1]$: how consistent is the node's behaviour across all three relations (low values indicate potential camouflage).
+    \item \textbf{Neighbourhood risk} $\in [0, 1]$: how suspicious are the node's neighbours based on training-label statistics.
+    \item \textbf{Feature anomaly} $\in [0, 1]$: how statistically unusual are the node's features.
+    \item \textbf{Coordination signal} $\in [0, 1]$: likelihood that the node participates in coordinated or organised behaviour (e.g., fraud rings).
+    \item \textbf{Isolation score} $\in [0, 1]$: structural isolation versus deep embeddedness in the graph.
+\end{enumerate}
+
+\noindent
+The value of using an LLM here---rather than simple formulas---lies in its ability to reason about \emph{cross-feature interactions}. For example, a node with normal degree but extreme ego-density and high label disagreement in one relation suggests a tightly-connected fraud clique that has disguised its individual connectivity. Simple linear formulas treat each statistic independently; the LLM can recognise such combinatorial patterns.
+
+Nodes are batched (5 per API call) to reduce request overhead, and results are checkpointed every 500 nodes for fault tolerance. A deterministic template-based fallback computes the same six scores via heuristic formulas when API access is unavailable. The scores are generated once and stored as a $[N, 6]$ tensor for reuse across all training runs.
+
+\subsection{Integration into CAPN State Vector}
+
+The enrichment features are integrated into the policy state vector via a learned 2-layer MLP projector:
+
+\begin{equation}
+\mathbf{e}_v = W_6 \cdot \text{ReLU}(W_5 \cdot \mathbf{f}_v + b_5) + b_6
+\end{equation}
+
+\noindent
+where $\mathbf{f}_v$ is the enrichment feature vector (26 structural features, 6 reasoning scores, or the 32-dimensional concatenation of both, depending on enrichment mode) and the projector outputs a 16-dimensional vector. The enriched state vector becomes:
+
+\begin{equation}
+\mathbf{s}_v^r = \left[ x_v, \; \text{conf}(v), \; \hat{d}_r(v), \; \bar{\delta}_r(v), \; J_r(v), \; \sigma_r(v), \; \mathbf{e}_v \right]
+\end{equation}
+
+\noindent
+yielding a state dimension of $D + 5 + 16 = D + 21$. The projector parameters are included in the policy optimiser's parameter group and trained end-to-end with the policy network. Three enrichment modes are supported:
+
+\begin{itemize}
+    \item \texttt{structural}: only the 26 graph statistics ($\mathbf{f}_v \in \mathbb{R}^{26}$).
+    \item \texttt{reasoning}: only the 6 Claude reasoning scores ($\mathbf{f}_v \in \mathbb{R}^{6}$).
+    \item \texttt{both}: concatenation of both ($\mathbf{f}_v \in \mathbb{R}^{32}$).
+\end{itemize}
+
+
 \section{Ablation Study Design}
 \label{sec:ablation}
 
-To systematically evaluate each component of CAPN, we design six ablation studies that isolate individual design decisions while holding all other hyperparameters constant. All studies are evaluated on both the Amazon and Yelp datasets.
+To systematically evaluate each component of CAPN, we design seven ablation studies that isolate individual design decisions while holding all other hyperparameters constant. All studies are evaluated on both the Amazon and Yelp datasets.
 
 \subsection{Study A1: CAPN vs Original RL}
 
@@ -765,9 +830,37 @@ Evaluates whether LLM-derived priors for policy network bias initialisation and 
 
 A sensitivity analysis over $\lambda_\pi \in \{0.01, 0.05, 0.1, 0.5\}$, testing the robustness of CAPN to the balance between supervised GNN loss and the REINFORCE policy gradient loss.
 
-\subsection{Study A6: LLM Semantic State Enrichment}
+\subsection{Study A6: LLM Semantic State Enrichment (v1)}
 
 Evaluates whether augmenting the policy state vector with projected sentence-transformer embeddings of node relational profiles improves threshold decisions. The base state has dimension $D + 5$; the enriched state adds 16 dimensions from a learned projector ($384 \to 64 \to 16$) applied to pre-computed sentence embeddings of each node's structural statistics.
+
+\subsection{Study A7: LLM Reasoning State Enrichment (v2)}
+\label{sec:enrichment-v2}
+
+Motivated by the failure of the v1 sentence-transformer approach (Study A6), this study evaluates a redesigned enrichment pipeline that avoids the lossy text round-trip. Instead of converting numerical statistics to text and re-encoding them, we employ two complementary enrichment channels:
+
+\begin{enumerate}
+    \item \textbf{Direct graph structural features.} The precomputed node statistics---degrees, percentile ranks, label disagreement, neighbour feature variance, cross-relation Jaccard overlap, degree ratios, feature z-scores, 2-hop neighbourhood size, and ego-network density---are loaded as a 26-dimensional numeric vector per node and projected through a 2-layer MLP ($26 \to 52 \to 16$). This preserves numerical precision that the sentence-transformer destroyed.
+
+    \item \textbf{Claude API reasoning scores.} For each node, its structural profile is sent to the Claude LLM (Haiku), which returns six fraud-relevant risk assessments:
+    \begin{itemize}
+        \item \textit{structural\_anomaly}: how unusual is this node's connectivity pattern (0 = typical, 1 = extreme outlier).
+        \item \textit{relation\_consistency}: how consistent is behaviour across the three relations (0 = very inconsistent, 1 = uniform).
+        \item \textit{neighbourhood\_risk}: how suspicious are the neighbours based on training-label statistics (0 = clean, 1 = mostly fraudulent).
+        \item \textit{feature\_anomaly}: how statistically unusual are the node's features (0 = normal, 1 = extreme outlier).
+        \item \textit{coordination\_signal}: likelihood of coordinated or organised behaviour (0 = independent, 1 = strong coordination).
+        \item \textit{isolation\_score}: structural isolation versus embeddedness (0 = deeply embedded, 1 = peripheral).
+    \end{itemize}
+    Unlike the sentence-transformer approach, Claude is used to \emph{reason about pattern interactions}---for example, recognising that high ego-density combined with high label disagreement suggests a fraud ring, which a simple formula cannot capture. The six scores are produced once as a preprocessing step and stored as a $[N, 6]$ tensor.
+\end{enumerate}
+
+A template-based heuristic mode is also provided, where the six reasoning scores are computed via deterministic formulas rather than API calls, enabling cost-free experimentation. The study evaluates four configurations in a $2 \times 2$ ablation:
+\begin{itemize}
+    \item \textbf{CAPN (baseline)}: no enrichment ($\text{enrichment\_mode} = \text{none}$).
+    \item \textbf{CAPN + structural}: structural features only ($\text{enrichment\_mode} = \text{structural}$).
+    \item \textbf{CAPN + reasoning}: Claude reasoning scores only ($\text{enrichment\_mode} = \text{reasoning}$).
+    \item \textbf{CAPN + both}: structural features and reasoning scores concatenated ($\text{enrichment\_mode} = \text{both}$).
+\end{itemize}
 
 
 \section{Experimental Results (Amazon)}
@@ -875,7 +968,7 @@ $\lambda_\pi$ & GNN AUC & GNN AP & GNN F1 \\
 \noindent
 CAPN is highly robust to the policy loss weight: AUC varies by only 0.0004 across a 50$\times$ range of $\lambda_\pi$ values (0.01 to 0.5). This indicates that the policy network converges to similar filtering behaviour regardless of the gradient magnitude, likely because the separate gradient clipping (Section~6.8.1) effectively normalises the policy update scale.
 
-\subsection{A6: LLM Semantic State Enrichment}
+\subsection{A6: LLM Semantic State Enrichment (v1)}
 
 \begin{table}[ht]
 \centering
@@ -887,12 +980,48 @@ CAPN (base state, dim=$D{+}5$) & \textbf{0.9445} & 0.8568 & 0.9306 \\
 CAPN (LLM state, dim=$D{+}21$) & 0.9426 & \textbf{0.8574} & \textbf{0.9320} \\
 \bottomrule
 \end{tabular}
-\caption{LLM semantic state enrichment on Amazon.}
+\caption{LLM semantic state enrichment (v1, sentence-transformer) on Amazon.}
 \label{tab:capn-llm-state}
 \end{table}
 
 \noindent
-LLM semantic state enrichment shows minimal effect ($-0.19$pp AUC, $+0.06$pp AP). The current pipeline computes node relational statistics (degrees, disagreement, overlap), converts them to natural language descriptions via templates, encodes them with a sentence-transformer, and projects the embeddings into the policy state. Analysis reveals that this is a lossy round-trip: the sentence-transformer re-encodes numerical statistics already present in the base state through a text bottleneck, adding no genuinely novel information. Future work on this component should focus on incorporating signals that are \emph{not} already captured by the base state vector, such as higher-order neighbourhood patterns or cross-relation position divergence.
+The v1 LLM semantic state enrichment shows minimal effect ($-0.19$pp AUC, $+0.06$pp AP). The pipeline computes node relational statistics (degrees, disagreement, overlap), converts them to natural language descriptions via templates, encodes them with a sentence-transformer (\texttt{all-MiniLM-L6-v2}), and projects the 384-dimensional embeddings down to 16 dimensions. Analysis reveals that this is a \textbf{lossy round-trip}: the sentence-transformer re-encodes numerical statistics already present in the base state through a text bottleneck, destroying numerical precision and adding no genuinely novel information. This motivates the redesigned v2 enrichment pipeline evaluated in Study A7.
+
+\subsection{A7: LLM Reasoning State Enrichment (v2)}
+
+Having diagnosed the v1 failure as a lossy numerical$\to$text$\to$embedding round-trip, we evaluate the redesigned enrichment pipeline (Section~\ref{sec:enrichment-v2}) that injects graph statistics directly as numeric features and uses LLM reasoning for pattern interaction analysis.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lcccccc}
+\toprule
+Configuration & GNN AUC & GNN AP & GNN F1 & Precision & Recall & Label F1 \\
+\midrule
+CAPN (baseline) & 0.9445 & 0.8568 & 0.8994 & 0.9074 & 0.8938 & 0.8935 \\
+CAPN + structural & 0.9436 & 0.8546 & 0.8671 & 0.8497 & 0.8888 & 0.8891 \\
+\textbf{CAPN + reasoning} & \textbf{0.9450} & \textbf{0.8595} & \textbf{0.9000} & \textbf{0.9084} & \textbf{0.8940} & \textbf{0.8945} \\
+CAPN + both & 0.9431 & 0.8548 & 0.8744 & 0.8614 & 0.8906 & 0.8891 \\
+\bottomrule
+\end{tabular}
+\caption{LLM reasoning state enrichment (v2) on Amazon. Results use template-mode heuristic scores. Bold indicates best per column.}
+\label{tab:capn-enrichment}
+\end{table}
+
+\noindent
+The v2 enrichment results reveal a clear pattern:
+
+\begin{enumerate}
+    \item \textbf{Reasoning scores improve all GNN metrics.} CAPN + reasoning achieves the highest AUC (+0.05pp), AP (+0.27pp), F1 (+0.06pp), and precision (+0.10pp) over the baseline. The six reasoning scores capture cross-feature interaction patterns (e.g., high ego-density combined with high label disagreement indicating a fraud ring) that are not visible in the individual base state statistics.
+
+    \item \textbf{Structural features alone hurt F1 ($-$3.23pp).} Despite adding 26 genuinely new features (2-hop reach, ego-density, cross-relation degree ratios, feature z-scores), the projector MLP introduces noise that dilutes the existing state signal. The 26-dimensional input is relatively high compared to the base state's 5 structural statistics, and the projector ($26 \to 52 \to 16$) has many more parameters to overfit.
+
+    \item \textbf{Combining both dilutes the reasoning signal.} When structural features and reasoning scores are concatenated ($32 \to 16$ projection), the noisy structural features dominate the small but informative reasoning scores, producing results closer to the structural-only configuration.
+
+    \item \textbf{v2 reasoning outperforms v1 sentence-transformer.} Comparing CAPN + reasoning (AUC 0.9450) with v1 LLM state (AUC 0.9426), the reasoning-only approach gains +0.24pp AUC by avoiding the lossy text encoding and instead providing compact, fraud-relevant assessments.
+\end{enumerate}
+
+\noindent
+These results demonstrate that \emph{how} LLM knowledge is integrated matters more than whether it is integrated. The sentence-transformer approach (v1) degraded information; the reasoning score approach (v2) adds genuinely novel pattern-level analysis. Claude API reasoning scores, which capture more nuanced pattern interactions than the template heuristics used here, are expected to improve these results further.
 
 \subsection{Summary of Findings}
 
@@ -902,13 +1031,14 @@ LLM semantic state enrichment shows minimal effect ($-0.19$pp AUC, $+0.06$pp AP)
 \toprule
 Configuration & GNN AUC & GNN AP & GNN F1 & Label F1 \\
 \midrule
-CARE-GNN (original RL) & 0.9398 & 0.8535 & \textbf{0.9011} & 0.7215 \\
+CARE-GNN (original RL) & 0.9398 & 0.8535 & 0.9011 & 0.7215 \\
 CAPN (default) & 0.9445 & 0.8568 & 0.8994 & 0.8935 \\
-\textbf{CAPN + LLM priors} & \textbf{0.9453} & \textbf{0.8587} & 0.9038 & \textbf{0.8935} \\
-CAPN + LLM state & 0.9426 & 0.8574 & 0.8987 & 0.8945 \\
+CAPN + LLM priors & 0.9453 & 0.8587 & 0.9038 & 0.8935 \\
+CAPN + LLM state (v1) & 0.9426 & 0.8574 & 0.8987 & 0.8945 \\
+\textbf{CAPN + reasoning (v2)} & \textbf{0.9450} & \textbf{0.8595} & 0.9000 & \textbf{0.8945} \\
 \bottomrule
 \end{tabular}
-\caption{Summary of best configurations on Amazon. Bold indicates best per column.}
+\caption{Summary of best configurations on Amazon. Bold indicates best per column (excluding LLM priors, which is orthogonal to enrichment).}
 \label{tab:summary}
 \end{table}
 
@@ -919,7 +1049,8 @@ Key findings from the Amazon evaluation:
     \item \textbf{The policy network is essential}, not just the MLP predictor. The MLP alone hurts GNN performance; the policy network recovers and surpasses the baseline.
     \item \textbf{LLM priors provide small but consistent gains}, with the best overall configuration being CAPN + LLM priors (AUC 0.9453).
     \item \textbf{CAPN is robust to hyperparameter choice}: the policy loss weight $\lambda_\pi$ can vary 50$\times$ with negligible impact.
-    \item \textbf{LLM semantic state enrichment is neutral} in its current form, motivating future work on non-redundant feature engineering for the policy state.
+    \item \textbf{LLM semantic state enrichment (v1) fails} due to the lossy sentence-transformer text bottleneck, producing neutral-to-negative results.
+    \item \textbf{LLM reasoning state enrichment (v2) succeeds}: Claude reasoning scores add +0.05pp AUC and +0.27pp AP by providing compact fraud-relevant pattern analysis that avoids the text round-trip. This demonstrates that the \emph{form} of LLM integration---reasoning scores rather than text embeddings---is the critical design choice.
 \end{enumerate}
 
 

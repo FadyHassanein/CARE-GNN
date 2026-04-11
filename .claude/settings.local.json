@@ -28,7 +28,24 @@
       "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -m llm.compute_node_statistics --data amazon)",
       "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -m llm.generate_risk_scores --data amazon --mode template)",
       "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -m llm.compute_node_statistics --data yelp)",
-      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe train.py --data amazon --model CARE --use-capn --enrichment-mode structural --batch-size 256 --num-epoch 3)"
+      "Bash(C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe train.py --data amazon --model CARE --use-capn --enrichment-mode structural --batch-size 256 --num-epoch 3)",
+      "Bash(xargs grep:*)",
+      "Bash(python3:*)",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(python:*)",
+      "Bash(pip list:*)",
+      "Bash(conda list:*)",
+      "Bash(where python:*)",
+      "Bash(where python3:*)",
+      "Bash(conda activate:*)",
+      "Bash(conda info:*)",
+      "Bash(pip show:*)",
+      "Read(//c/Users/fadyh/miniconda3/envs//**)",
+      "Read(//c/Users/fadyh/anaconda3/**)",
+      "Bash(conda run:*)",
+      "Bash(/c/Users/fadyh/anaconda3/condabin/conda.bat run:*)",
+      "Bash(/c/Users/fadyh/miniconda3/envs/torch_cuda/python.exe:*)"
     ]
   }
 }

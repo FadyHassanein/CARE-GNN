@@ -182,12 +182,12 @@ def get_capn_enrichment_experiments():
     return [
         {'name': 'CAPN (baseline)', 'model': 'CARE', 'use_capn': True,
          'enrichment_mode': 'none'},
-        {'name': 'CAPN + structural', 'model': 'CARE', 'use_capn': True,
-         'enrichment_mode': 'structural'},
+        # {'name': 'CAPN + structural', 'model': 'CARE', 'use_capn': True,
+        #  'enrichment_mode': 'structural'},
         {'name': 'CAPN + reasoning', 'model': 'CARE', 'use_capn': True,
          'enrichment_mode': 'reasoning'},
-        {'name': 'CAPN + both', 'model': 'CARE', 'use_capn': True,
-         'enrichment_mode': 'both'},
+        # {'name': 'CAPN + both', 'model': 'CARE', 'use_capn': True,
+        #  'enrichment_mode': 'both'},
     ]
 
 
