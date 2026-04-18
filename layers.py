@@ -24,7 +24,8 @@ class InterAgg(nn.Module):
                  threshold_min=0.001, threshold_max=0.999,
                  rl_patience=5, rl_epsilon=1e-4,
                  policy_network=None, state_constructor=None,
-                 enhanced_label_clf=None, multi_view_distance=None):
+                 enhanced_label_clf=None, multi_view_distance=None,
+                 soft_attn=False):
         """
         Initialize the inter-relation aggregator.
         Generalized to support N relations (not hardcoded to 3).
@@ -70,6 +71,7 @@ class InterAgg(nn.Module):
         self.state_constructor = state_constructor
         self.multi_view_distance = multi_view_distance
         self.use_capn = policy_network is not None
+        self.soft_attn = soft_attn
 
         # set device on all intra-aggregators
         for agg in self.intra_aggs:
@@ -118,6 +120,7 @@ class InterAgg(nn.Module):
         self._capn_log_probs = []
         self._capn_thresholds = []
         self._capn_avg_dist = 0.0
+        self._capn_states = []
 
     def forward(self, nodes, labels, train_flag=True):
         """
@@ -156,6 +159,7 @@ class InterAgg(nn.Module):
             # CAPN mode: compute per-node thresholds via policy network
             batch_log_probs = []
             batch_thresholds = []
+            batch_states = []  # keep states so the critic can estimate V(s)
             self.policy_network.reset_episode()
 
             for r_idx in range(self.num_relations):
@@ -167,6 +171,7 @@ class InterAgg(nn.Module):
                 # compute state vectors for policy network
                 state = self.state_constructor.compute_state(
                     nodes, r_idx, center_scores, r_score, r_list)
+                batch_states.append(state)
 
                 # get per-node thresholds from policy
                 deterministic = not train_flag
@@ -177,14 +182,21 @@ class InterAgg(nn.Module):
                 # store for policy gradient
                 self.policy_network.store_action(log_probs, node_thresholds)
 
-                # compute per-node sample counts using per-node thresholds
-                sample_nums = [max(1, math.ceil(len(neighs) * node_thresholds[i].item()))
-                               for i, neighs in enumerate(r_list)]
-                r_sample_num_lists.append(sample_nums)
+                # CAPN: pass per-node thresholds as temperatures for soft attention
+                # or as sample counts for hard filtering (backward compat)
+                if self.soft_attn:
+                    # threshold is used as temperature directly
+                    temps = [node_thresholds[i].item() for i in range(len(r_list))]
+                    r_sample_num_lists.append(temps)
+                else:
+                    sample_nums = [max(1, math.ceil(len(neighs) * node_thresholds[i].item()))
+                                   for i, neighs in enumerate(r_list)]
+                    r_sample_num_lists.append(sample_nums)
 
             # store for reward computation
             self._capn_log_probs = batch_log_probs
             self._capn_thresholds = batch_thresholds
+            self._capn_states = batch_states
         else:
             # Original CARE-GNN mode: global thresholds per relation
             for r_idx in range(self.num_relations):
@@ -198,10 +210,11 @@ class InterAgg(nn.Module):
         r_feats_list = []
         r_scores_out = []
         for r_idx in range(self.num_relations):
+            use_soft = self.use_capn and self.soft_attn
             r_feats, r_samp_scores = self.intra_aggs[r_idx].forward(
                 nodes, r_lists[r_idx], center_scores, r_scores[r_idx], r_sample_num_lists[r_idx],
                 multi_view_distance=self.multi_view_distance if self.use_capn else None,
-                relation_idx=r_idx)
+                relation_idx=r_idx, soft_attn=use_soft)
             r_feats_list.append(r_feats)
             r_scores_out.append(r_samp_scores)
 
@@ -289,6 +302,14 @@ class InterAgg(nn.Module):
             return [t.detach() for t in self._capn_thresholds]
         return []
 
+    def get_capn_states(self):
+        """Get the latest per-relation state tensors used by the policy network.
+
+        Returns a list of tensors (one per relation), each [batch_size, state_dim].
+        Used by the Actor-Critic ValueNetwork to estimate V(s).
+        """
+        return list(self._capn_states) if self._capn_states else []
+
 
 class IntraAgg(nn.Module):
 
@@ -310,7 +331,7 @@ class IntraAgg(nn.Module):
             self.device = torch.device('cuda' if cuda else 'cpu')
 
     def forward(self, nodes, to_neighs_list, batch_scores, neigh_scores, sample_list,
-                multi_view_distance=None, relation_idx=None):
+                multi_view_distance=None, relation_idx=None, soft_attn=False):
         """
         Code partially from https://github.com/williamleif/graphsage-simple/
         :param nodes: list of nodes in a batch
@@ -318,11 +339,18 @@ class IntraAgg(nn.Module):
         :param batch_scores: the label-aware scores of batch nodes
         :param neigh_scores: the label-aware scores 1-hop neighbors each batch node in one relation
         :param sample_list: the number of neighbors kept for each batch node in one relation
+                           In soft_attn mode, these are temperature values (floats) per node.
         :param multi_view_distance: optional MultiViewDistance for CAPN mode
         :param relation_idx: relation index for multi-view distance
+        :param soft_attn: if True, use soft attention weighting instead of hard top-K
         :return to_feats: the aggregated embeddings of batch nodes neighbors in one relation
         :return samp_scores: the average neighbor distances for each relation after filtering
         """
+
+        if soft_attn:
+            return self._forward_soft_attn(
+                nodes, to_neighs_list, batch_scores, neigh_scores, sample_list,
+                multi_view_distance=multi_view_distance, relation_idx=relation_idx)
 
         # filter neighbors under given relation
         samp_neighs, samp_scores = filter_neighs_ada_threshold(
@@ -344,6 +372,81 @@ class IntraAgg(nn.Module):
         mask = mask.div(num_neigh)
         embed_matrix = self.features(torch.LongTensor(unique_nodes_list).to(self.device))
         to_feats = mask.mm(embed_matrix)
+        to_feats = F.relu(to_feats)
+        return to_feats, samp_scores
+
+    def _forward_soft_attn(self, nodes, to_neighs_list, batch_scores, neigh_scores, temperature_list,
+                           multi_view_distance=None, relation_idx=None):
+        """
+        Soft attention aggregation: use ALL neighbors with distance-based attention weights.
+        Temperature controls sharpness: low temp = focus on closest, high temp = uniform.
+        Vectorized implementation for performance.
+        """
+        batch_size = len(nodes)
+
+        # Collect all neighbor node ids across the batch
+        all_neighs_flat = []
+        for neighs in to_neighs_list:
+            all_neighs_flat.extend(neighs)
+        if not all_neighs_flat:
+            zero_feats = torch.zeros(batch_size, self.feat_dim, device=self.device)
+            return zero_feats, [[] for _ in range(batch_size)]
+
+        unique_nodes_list = list(set(all_neighs_flat) | set(nodes))
+        unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
+        embed_matrix = self.features(torch.LongTensor(unique_nodes_list).to(self.device))
+
+        # Pre-compute all distances and build sparse index arrays
+        row_ids = []
+        col_ids = []
+        logit_vals = []
+        samp_scores = []
+
+        for idx in range(batch_size):
+            neighs_indices = to_neighs_list[idx]
+            if len(neighs_indices) == 0:
+                samp_scores.append([])
+                continue
+
+            center_score = batch_scores[idx][0]
+            neigh_score = neigh_scores[idx][:, 0].view(-1, 1)
+
+            # Compute distances
+            if multi_view_distance is not None:
+                score_diff = multi_view_distance.compute_distance(
+                    center_score, neigh_score, neighs_indices,
+                    nodes[idx], relation_idx)
+            else:
+                cs = center_score.repeat(neigh_score.size()[0], 1)
+                score_diff = torch.abs(cs - neigh_score).squeeze()
+
+            if score_diff.dim() == 0:
+                score_diff = score_diff.unsqueeze(0)
+
+            samp_scores.append(score_diff.detach().tolist())
+
+            # Temperature from policy
+            temp = max(temperature_list[idx], 0.01)
+            attn_logits = -score_diff / temp
+
+            # Build index arrays for sparse → dense conversion
+            cols = [unique_nodes[n] for n in neighs_indices]
+            row_ids.extend([idx] * len(cols))
+            col_ids.extend(cols)
+            logit_vals.extend(attn_logits.detach().cpu().tolist() if attn_logits.dim() > 0 else [attn_logits.item()])
+
+        # Build dense mask from sparse indices
+        mask = torch.full((batch_size, len(unique_nodes_list)), float('-inf'), device=self.device)
+        if row_ids:
+            mask[row_ids, col_ids] = torch.tensor(logit_vals, device=self.device)
+
+        # Softmax over neighbors for each node
+        attn_weights = F.softmax(mask, dim=1)
+        # Zero out nodes with no neighbors
+        has_neighs = (mask > float('-inf')).any(dim=1, keepdim=True).float()
+        attn_weights = attn_weights * has_neighs
+
+        to_feats = attn_weights.mm(embed_matrix)
         to_feats = F.relu(to_feats)
         return to_feats, samp_scores
 

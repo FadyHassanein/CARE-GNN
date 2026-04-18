@@ -69,9 +69,10 @@ class CareConfig:
 
     # CAPN: Camouflage-Aware Policy Network
     use_capn: bool = False
-    policy_lr: float = 1e-3
+    soft_attn: bool = False
+    policy_lr: float = 3e-3
     policy_hidden: int = 64
-    lambda_policy: float = 0.1
+    lambda_policy: float = 0.3
     reward_w1: float = 0.5
     reward_w2: float = 0.3
     reward_w3: float = 0.2
@@ -81,10 +82,14 @@ class CareConfig:
     # LLM semantic state enrichment (v1 — sentence-transformer, kept for backward compat)
     use_llm_state: bool = False
     llm_embedding_path: str = ''  # default resolved at runtime: llm_embeddings/{data}/llm_semantic_embeddings.pt
-    llm_projection_dim: int = 16
+    llm_projection_dim: int = 64
 
     # v2 enrichment: direct graph features + Claude reasoning scores
     enrichment_mode: str = 'none'  # 'none', 'structural', 'reasoning', 'both'
     graph_features_path: str = ''  # resolved at runtime: llm_embeddings/{data}/node_statistics.npz
     risk_scores_path: str = ''     # resolved at runtime: llm_embeddings/{data}/llm_risk_scores.pt
     structural_projection_dim: int = 16
+    projector_mode: str = 'auto'   # 'auto', 'linear', 'small_mlp', 'mlp'
+
+    # v3 feature-level enrichment: concat reasoning scores directly to node features
+    feature_enrichment: str = 'none'  # 'none', 'reasoning' — concat to feat_data before GNN

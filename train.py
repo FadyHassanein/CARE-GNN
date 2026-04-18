@@ -108,9 +108,10 @@ def parse_args():
 
     # CAPN: Camouflage-Aware Policy Network
     parser.add_argument('--use-capn', action='store_true', default=False, help='Use CAPN policy network for adaptive thresholds.')
-    parser.add_argument('--policy-lr', type=float, default=1e-3, help='Policy network learning rate.')
+    parser.add_argument('--soft-attn', action='store_true', default=False, help='Use soft attention neighbor weighting (CAPN Phase 2). Threshold becomes temperature.')
+    parser.add_argument('--policy-lr', type=float, default=3e-3, help='Policy network learning rate.')
     parser.add_argument('--policy-hidden', type=int, default=64, help='Policy network hidden dimension.')
-    parser.add_argument('--lambda-policy', type=float, default=0.1, help='Weight for policy gradient loss.')
+    parser.add_argument('--lambda-policy', type=float, default=0.3, help='Weight for policy gradient loss.')
     parser.add_argument('--reward-w1', type=float, default=0.5, help='Shaped reward: distance improvement weight.')
     parser.add_argument('--reward-w2', type=float, default=0.3, help='Shaped reward: accuracy signal weight.')
     parser.add_argument('--reward-w3', type=float, default=0.2, help='Shaped reward: regularization weight.')
@@ -118,13 +119,36 @@ def parse_args():
     parser.add_argument('--policy-grad-clip', type=float, default=5.0, help='Gradient clipping max norm for policy network.')
     parser.add_argument('--llm-priors-file', type=str, default='', help='Path to LLM-generated priors JSON file.')
 
+    # Actor-Critic (replaces REINFORCE when enabled)
+    parser.add_argument('--use-actor-critic', action='store_true', default=False,
+                        help='Use Actor-Critic (ValueNetwork baseline) instead of REINFORCE.')
+    parser.add_argument('--critic-lr', type=float, default=1e-3,
+                        help='ValueNetwork critic learning rate.')
+    parser.add_argument('--critic-hidden', type=int, default=64,
+                        help='ValueNetwork critic hidden dimension.')
+    parser.add_argument('--lambda-critic', type=float, default=0.1,
+                        help='Weight for critic MSE loss.')
+    parser.add_argument('--gnn-warmup-epochs', type=int, default=0,
+                        help='Epochs of GNN-only training before enabling CAPN policy.')
+    parser.add_argument('--lambda-policy-ramp-epochs', type=int, default=0,
+                        help='Epochs to linearly ramp lambda_policy from 0 to target after warmup.')
+
+    # Text-based LLM enrichment (v4 - uses actual review text, not graph statistics)
+    parser.add_argument('--text-enrichment', type=str, default='none',
+                        choices=['none', 'concat', 'gate'],
+                        help='How to inject text risk scores into GNN node features.')
+    parser.add_argument('--text-state-enrichment', action='store_true', default=False,
+                        help='Append text risk scores to the RL policy state vector.')
+    parser.add_argument('--text-risk-scores-path', type=str, default='',
+                        help='Path to text_risk_scores.pt (default: llm_embeddings/{data}/text_risk_scores.pt).')
+
     # label predictor
     parser.add_argument('--use-mlp-label', action='store_true', default=False, help='Use MLP label predictor without full CAPN policy network.')
 
     # LLM semantic state enrichment (v1)
     parser.add_argument('--use-llm-state', action='store_true', default=False, help='Enable LLM semantic state enrichment for CAPN (v1 sentence-transformer).')
     parser.add_argument('--llm-embedding-path', type=str, default=None, help='Path to LLM embeddings (default: llm_embeddings/{data}/llm_semantic_embeddings.pt).')
-    parser.add_argument('--llm-projection-dim', type=int, default=16, help='LLM embedding projection dimension.')
+    parser.add_argument('--llm-projection-dim', type=int, default=64, help='LLM embedding projection dimension.')
 
     # v2 enrichment: direct graph features + Claude reasoning scores
     parser.add_argument('--enrichment-mode', type=str, default='none',
@@ -136,6 +160,14 @@ def parse_args():
                         help='Path to llm_risk_scores.pt (default: llm_embeddings/{data}/llm_risk_scores.pt).')
     parser.add_argument('--structural-projection-dim', type=int, default=16,
                         help='Projection dimension for v2 enrichment features.')
+    parser.add_argument('--projector-mode', type=str, default='auto',
+                        choices=['auto', 'linear', 'small_mlp', 'mlp'],
+                        help='Projector architecture mode for RL state enrichment.')
+
+    # v3 feature-level enrichment: concat reasoning scores directly to node features
+    parser.add_argument('--feature-enrichment', type=str, default='none',
+                        choices=['none', 'reasoning'],
+                        help='Concat reasoning scores to node features before GNN (v3).')
 
     return parser.parse_args()
 
@@ -207,11 +239,63 @@ def train(args):
     # get loss function
     loss_fn = get_loss_fn(args.loss, labels=y_train, under_sample=args.under_sample)
 
-    # initialize model input
-    features = nn.Embedding(feat_data.shape[0], feat_data.shape[1])
+    # initialize model input — L1 normalize original features
     feat_data = normalize(feat_data)
+
+    # v3 feature-level enrichment: concat AFTER normalization
+    # Normalize independently so reasoning scores don't dilute original features
+    if args.feature_enrichment == 'reasoning':
+        rs_path = args.risk_scores_path or f'llm_embeddings/{args.data}/llm_risk_scores.pt'
+        if os.path.exists(rs_path):
+            rs_tensor = torch.load(rs_path, weights_only=True)
+            rs_np = rs_tensor.numpy()
+            # Scale scores to match L1-normalized feature magnitude
+            feat_scale = np.abs(feat_data).mean(axis=1, keepdims=True)
+            feat_scale[feat_scale < 1e-8] = 1e-8
+            rs_scaled = rs_np * feat_scale
+            feat_data = np.concatenate([feat_data, rs_scaled], axis=1)
+            logger.info(f'Feature-level enrichment: concat {rs_tensor.shape[1]} scores (scaled) -> feat_dim={feat_data.shape[1]}')
+        else:
+            logger.warning(f'Feature enrichment enabled but {rs_path} not found. Skipping.')
+
+    # v4 text-based enrichment: use raw review text risk scores
+    # 'concat' mode: same behaviour as v3 but with text scores
+    # 'gate' mode: keep feat_dim stable, apply TextFeatureGate at train-time
+    text_risk_scores = None           # raw [N, 6] tensor (kept for later use)
+    text_feature_gate = None          # TextFeatureGate module (only in 'gate' mode)
+    if args.text_enrichment != 'none' or args.text_state_enrichment:
+        tr_path = args.text_risk_scores_path or f'llm_embeddings/{args.data}/text_risk_scores.pt'
+        if os.path.exists(tr_path):
+            text_risk_scores = torch.load(tr_path, weights_only=True)
+            logger.info(f'Loaded text risk scores: {text_risk_scores.shape} from {tr_path}')
+        else:
+            raise FileNotFoundError(
+                f'text_risk_scores.pt not found at {tr_path}. '
+                f'Run: python -m llm.generate_text_risk_scores --data {args.data} --mode template')
+
+    if args.text_enrichment == 'concat' and text_risk_scores is not None:
+        tr_np = text_risk_scores.numpy()
+        feat_scale = np.abs(feat_data).mean(axis=1, keepdims=True)
+        feat_scale[feat_scale < 1e-8] = 1e-8
+        tr_scaled = tr_np * feat_scale
+        feat_data = np.concatenate([feat_data, tr_scaled], axis=1)
+        logger.info(f'Text-enrichment concat: +{tr_np.shape[1]} text scores -> feat_dim={feat_data.shape[1]}')
+
+    features = nn.Embedding(feat_data.shape[0], feat_data.shape[1])
     features.weight = nn.Parameter(torch.FloatTensor(feat_data), requires_grad=False)
     features = features.to(device)
+
+    # 'gate' mode: apply a TextFeatureGate at every feature lookup via GatedEmbedding
+    # which wraps the frozen nn.Embedding. Gate parameters are trainable and
+    # added to the GNN optimizer below.
+    if args.text_enrichment == 'gate' and text_risk_scores is not None:
+        from capn import TextFeatureGate, GatedEmbedding
+        text_feature_gate = TextFeatureGate(
+            feat_dim=feat_data.shape[1], text_dim=text_risk_scores.shape[1]).to(device)
+        features = GatedEmbedding(features, text_risk_scores.to(device),
+                                   text_feature_gate).to(device)
+        logger.info(f'Text-enrichment gate: TextFeatureGate({feat_data.shape[1]}, '
+                    f'{text_risk_scores.shape[1]}) — gate init sigmoid(-2)~0.12')
 
     # set input graph
     if args.model == 'SAGE':
@@ -290,14 +374,18 @@ def train(args):
             enrichment_dim = enrichment_tensor.shape[1]
             enrichment_projector = LLMProjector(
                 input_dim=enrichment_dim,
-                projection_dim=args.structural_projection_dim).to(device)
+                projection_dim=args.structural_projection_dim,
+                mode=args.projector_mode).to(device)
             logger.info(f'Enrichment projector: {enrichment_dim} -> {args.structural_projection_dim}')
 
-        # state constructor
+        # state constructor (optionally with text risk scores in state)
+        state_text_scores = text_risk_scores.to(device) if (
+            text_risk_scores is not None and args.text_state_enrichment) else None
         state_constructor = StateConstructor(
             adj_lists, homo, features, device=device,
             llm_embeddings=llm_embeddings, llm_projector=llm_projector,
-            enrichment_tensor=enrichment_tensor, enrichment_projector=enrichment_projector)
+            enrichment_tensor=enrichment_tensor, enrichment_projector=enrichment_projector,
+            text_risk_scores=state_text_scores)
 
         # policy network (state_dim adjusts based on enrichment)
         state_dim = feat_data.shape[1] + 5
@@ -305,11 +393,22 @@ def train(args):
             state_dim += args.llm_projection_dim
         if enrichment_dim > 0:
             state_dim += args.structural_projection_dim
+        if state_text_scores is not None:
+            state_dim += state_text_scores.shape[1]
+            logger.info(f'Text state enrichment: +{state_text_scores.shape[1]} dims')
         policy_network = PolicyNetwork(
             state_dim, hidden_dim=args.policy_hidden,
             num_relations=len(adj_lists),
             relation_biases=relation_biases).to(device)
         logger.info(f'Policy network state_dim={state_dim}')
+
+        # ValueNetwork critic (Actor-Critic)
+        value_network = None
+        if args.use_actor_critic:
+            from capn import ValueNetwork
+            value_network = ValueNetwork(state_dim, hidden_dim=args.critic_hidden).to(device)
+            logger.info(f'ValueNetwork critic enabled: state_dim={state_dim}, '
+                        f'hidden={args.critic_hidden}, lr={args.critic_lr}')
 
         # multi-view distance
         gamma_init = gamma_inits if gamma_inits else args.gamma_init
@@ -328,11 +427,18 @@ def train(args):
                           inter=args.inter, step_size=args.step_size, device=device,
                           dropout=args.dropout, rl_patience=args.rl_patience, rl_epsilon=args.rl_epsilon,
                           policy_network=policy_network, state_constructor=state_constructor,
-                          enhanced_label_clf=enhanced_label_clf, multi_view_distance=multi_view_distance)
+                          enhanced_label_clf=enhanced_label_clf, multi_view_distance=multi_view_distance,
+                          soft_attn=args.soft_attn)
         if args.use_capn:
             gnn_model = CAPNOneLayerCARE(2, inter1, args.lambda_1,
                                           lambda_policy=args.lambda_policy,
-                                          reward_computer=reward_computer, loss_fn=loss_fn)
+                                          reward_computer=reward_computer,
+                                          loss_fn=loss_fn,
+                                          value_network=value_network,
+                                          lambda_critic=args.lambda_critic,
+                                          use_actor_critic=args.use_actor_critic,
+                                          gnn_warmup_epochs=args.gnn_warmup_epochs,
+                                          lambda_policy_ramp_epochs=args.lambda_policy_ramp_epochs)
         else:
             gnn_model = OneLayerCARE(2, inter1, args.lambda_1, loss_fn=loss_fn)
 
@@ -357,9 +463,11 @@ def train(args):
 
     # set up optimizers
     if args.use_capn and policy_network is not None:
-        # dual optimizer: separate LR for policy network
+        # dual optimizer: separate LR for policy network + critic
         gnn_params = [p for n, p in gnn_model.named_parameters()
-                      if p.requires_grad and 'policy_network' not in n]
+                      if p.requires_grad
+                      and 'policy_network' not in n
+                      and 'value_network' not in n]
         policy_param_groups = [
             {'params': list(policy_network.parameters()), 'lr': args.policy_lr},
         ]
@@ -369,6 +477,9 @@ def train(args):
         if enrichment_projector is not None:
             policy_param_groups.append(
                 {'params': list(enrichment_projector.parameters()), 'lr': args.policy_lr})
+        if value_network is not None:
+            policy_param_groups.append(
+                {'params': list(value_network.parameters()), 'lr': args.critic_lr})
         optimizer = torch.optim.Adam(gnn_params, lr=args.lr, weight_decay=args.lambda_2)
         policy_optimizer = torch.optim.Adam(policy_param_groups)
         all_policy_params = [p for pg in policy_param_groups for p in pg['params']]
@@ -396,6 +507,10 @@ def train(args):
     # train the model
     for epoch in range(args.num_epochs):
         gnn_model.train()
+
+        # inform the model of the current epoch for warmup/ramp scheduling
+        if hasattr(gnn_model, 'set_epoch'):
+            gnn_model.set_epoch(epoch)
 
         # reset reward computer distance tracking for new epoch
         if reward_computer is not None:

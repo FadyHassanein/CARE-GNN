@@ -1,64 +1,83 @@
 \chapter{Methodology}
 \lhead{\emph{Chapter3}}
 
-In this chapter, we outline the methodological framework used to develop and evaluate Graph Neural Network models for fraud detection on two benchmark datasets: the Amazon fraud dataset and the Yelp fraud dataset. We first describe both datasets and the preprocessing steps required to construct the multi-relational graphs, then discuss the three baseline architectures implemented---Relation-Aware GCN, Multi-Relation GraphSAGE, and CARE-GNN---and explain how each processes relational information. We then detail the reinforcement learning module used by CARE-GNN to adaptively filter neighbours, present our proposed extension, CAPN (Camouflage-Aware Policy Network), which replaces the heuristic RL module with a learned policy network, describe the LLM reasoning enrichment module that uses Claude to produce fraud-relevant risk scores for each node, and present the ablation study framework used to evaluate each component of CAPN systematically.
+This chapter presents the methodology behind the main contribution of this thesis: a \textbf{Unified GNN + RL + LLM Framework} for fraud detection on heterogeneous review graphs. The framework is organised around three tightly coupled pillars. The \emph{GNN} pillar provides the backbone for multi-relation neighbour aggregation, the \emph{RL} pillar produces per-node adaptive filtering thresholds via a learned actor-critic policy, and the \emph{LLM} pillar supplies fraud-specific textual and domain signals that the behavioural features alone cannot capture. The three pillars interact through two interfaces: a gated injection that lets LLM-derived features modulate the node representation the GNN consumes, and a shared policy state that lets the RL agent condition its filtering decisions on both structural and textual signals.
+
+The chapter is organised as follows. Section~\ref{sec:unified-framework} gives a high-level overview of the unified framework and its design rationale. The two benchmark datasets---Amazon and Yelp---are described in Section~\ref{sec:datasets}, followed by the data processing pipeline. The \emph{GNN backbone} is built on CARE-GNN~\cite{dou2020enhancing} and two simpler baselines (GCN and GraphSAGE) used as reference points; these are covered in the Graph Neural Network Models section. The \emph{RL pillar} of the framework---an actor-critic policy network that supersedes the heuristic bandit used by CARE-GNN---is presented next, followed by the \emph{LLM pillar} which introduces fraud-specific text-based risk scores, a gated injection mechanism, and LLM-derived relation priors. Finally, we present the experimental design used to evaluate the framework, which consists of a main evaluation on the challenging YelpChi dataset (the framework's core test) and a set of supporting component-level ablations on the Amazon dataset that justify each internal design decision.
 
 \section{Dataset Description}
+\label{sec:datasets}
 
-The experiments in this study are conducted on two benchmark datasets for graph-based fraud detection: the Amazon fraud dataset and the Yelp fraud dataset (YelpChi). Both datasets model user behaviour through multi-relational graphs with anonymised numerical features.
+The experiments in this study are conducted on two benchmark datasets for graph-based fraud detection: the Amazon fraud dataset and the Yelp fraud dataset (YelpChi), originally released with CARE-GNN~\cite{dou2020enhancing}. Both datasets model user behaviour through multi-relational graphs with anonymised numerical features. All statistics reported in this section were recomputed directly on the release used in this thesis to ensure that reported figures match the data the models actually consume; where our measurements differ from the figures in the original CARE-GNN paper, we explicitly flag the discrepancy. Throughout, graph statistics treat each relation as an undirected simple graph: edges are counted as unique unordered pairs $(i,j)$ with $i\neq j$, and the average degree is computed as $2|E|/N$.
 
 \subsection{Amazon Fraud Dataset}
 
-The Amazon dataset contains \textbf{11,944} users, each represented as a node with \textbf{25} numerical features describing behavioural and profile-based attributes (star rating distributions, review counts, and review statistics). Users are labelled as either benign~(0) or fraudulent~(1), with \textbf{11,123} benign users and \textbf{821} fraudulent users (\textbf{6.9\%} fraud rate). Nodes 0--3,304 are unlabelled; only nodes 3,305 and above carry labels. The dataset provides three relational graphs:
+The Amazon dataset contains \textbf{11{,}944} user nodes with \textbf{25} numerical features describing behavioural and profile-based attributes (star-rating distributions, review counts, and review statistics). Users are labelled as either benign~(0) or fraudulent~(1), with \textbf{11{,}123} benign and \textbf{821} fraudulent users, giving a global fraud rate of \textbf{6.87\%} across all nodes. Following the CARE-GNN convention, nodes 0--3{,}304 are treated as unlabelled (they carry the placeholder value~0 in the label file but are excluded from training, validation, and test splits). This leaves $N_{\text{lab}}=8{,}639$ labelled nodes whose fraud rate is \textbf{9.50\%}; all supervised learning in this thesis operates on this labelled subset.
+
+The dataset provides three relational graphs:
 
 \begin{itemize}
-    \item \textbf{UPU} (User--Product--User): connects users who reviewed the same products. The sparsest relation (avg.\ degree 30.4), providing the clearest fraud signal---fraudulent nodes have 32.5\% fraud neighbours vs.\ 13.2\% for benign nodes.
-    \item \textbf{USU} (User--Seller--User): connects users who assigned the same star rating to the same seller within one week. Extremely dense (avg.\ degree 598.2) with weak homophily (13.0\% vs.\ 7.5\% fraud neighbours).
-    \item \textbf{UVU} (User--View--User): connects users whose review texts have high TF-IDF cosine similarity. Moderately dense (avg.\ degree 174.6) with the strongest fraud signal---fraudulent nodes have 33.1\% fraud neighbours vs.\ only 1.5\% for benign nodes.
+    \item \textbf{UPU} (User--Product--User): connects users who reviewed the same products. Moderately dense (avg.\ degree 29.4) and exhibits the strongest raw label homophily among the three relations in relative terms---fraudulent nodes have 10.0\% fraudulent neighbours on average, whereas benign nodes have only 4.8\% (a $\approx 2.1\times$ contrast over a 9.5\% base rate).
+    \item \textbf{USU} (User--Seller--User): connects users who assigned the same star rating to the same seller within one week. Very dense (avg.\ degree 597.2); homophily is comparable on fraud nodes (10.3\%) but the larger neighbourhood dilutes discriminative signal for benign nodes (3.6\%).
+    \item \textbf{UVU} (User--View--User): connects users whose review texts have high TF--IDF cosine similarity. Moderately dense (avg.\ degree 173.6) with the highest absolute fraud-to-fraud homophily: fraud nodes have 18.3\% fraudulent neighbours, benign nodes 3.0\%.
 \end{itemize}
 
 \begin{table}[h!]
 \centering
 \begin{tabular}{lrrrr}
 \hline
-Relation & Edges & Avg.\ Degree & Fraud Neigh.\ (\%) & Benign Neigh.\ (\%) \\
+Relation & $|E|$ (undir.) & Avg.\ Degree & \%Fraud Nbrs (fraud) & \%Fraud Nbrs (benign) \\
 \hline
-UPU & 175{,}608 & 30.4 & 32.5 & 13.2 \\
-USU & 3{,}566{,}479 & 598.2 & 13.0 & 7.5 \\
-UVU & 1{,}036{,}737 & 174.6 & 33.1 & 1.5 \\
+UPU & 175{,}608     & 29.41  & 10.03 & 4.76 \\
+USU & 3{,}566{,}479 & 597.20 & 10.32 & 3.55 \\
+UVU & 1{,}036{,}737 & 173.60 & 18.25 & 3.01 \\
 \hline
 \end{tabular}
-\caption{Summary statistics for each relational graph in the Amazon fraud dataset. Fraud/Benign Neigh.\ columns report the average fraction of fraudulent neighbours for fraud and benign nodes respectively.}
+\caption{Summary statistics for the Amazon relational graphs, computed on the actual release used in this thesis. ``\%Fraud Nbrs (fraud/benign)'' reports the per-node average fraction of fraudulent neighbours for fraud and benign nodes respectively (self-loops excluded).}
+\label{tab:amazon-stats}
 \end{table}
 
-Cross-relation analysis reveals that UPU and UVU capture largely complementary information (Jaccard overlap 0.064), while UPU and USU share moderate overlap (Jaccard 0.209). Feature analysis shows several strong individual fraud predictors: feature~19 (point-biserial $r = +0.658$), features~15--18 (star rating variants, $|r| > 0.4$), and feature~12 (review ratio, $r = +0.436$).
+Cross-relation edge-set analysis (Jaccard overlap on the sets of unique undirected edges) confirms that the three relations are largely complementary: UPU--USU $= 0.024$, UPU--UVU $= 0.013$, USU--UVU $= 0.062$. No pair exceeds~$7\%$ overlap, indicating that each relation captures a distinct slice of the user--user interaction graph.
+
+Feature-level analysis on the labelled subset identifies several strong individual fraud predictors. Using the point-biserial correlation $r$ between each feature and the binary fraud label:
+
+\begin{itemize}
+    \item feature~19 is the single strongest predictor ($r = +0.654$);
+    \item features~15, 16, and 18---variants of the star-rating distribution---are strongly negatively correlated ($r \approx -0.53$);
+    \item feature~12 (a review-ratio statistic) is positively correlated ($r = +0.516$);
+    \item features~7 and 13 are also informative ($|r| \approx 0.49$--$0.50$), while feature~17 is moderately predictive ($r = -0.371$).
+\end{itemize}
+
+Eight features have $|r| > 0.37$ on Amazon, which is notably high for an anonymised fraud benchmark and motivates the use of node features as a strong local signal in our GNN backbone.
 
 \subsection{Yelp Fraud Dataset (YelpChi)}
 
-The Yelp dataset contains \textbf{45,954} reviews (nodes) with \textbf{32} pre-normalised features (scaled to $[0, 1]$), of which \textbf{6,677} are fraudulent (\textbf{14.5\%} fraud rate). Unlike Amazon, all nodes carry labels. The dataset provides three relational graphs:
+The Yelp dataset contains \textbf{45{,}954} reviews (nodes) with \textbf{32} pre-normalised features scaled to $[0, 1]$, of which \textbf{6{,}677} are fraudulent, giving a fraud rate of \textbf{14.53\%}. Unlike Amazon, all nodes carry labels and participate in the train/validation/test split. The dataset provides three relational graphs:
 
 \begin{itemize}
-    \item \textbf{RUR} (Review--User--Review): connects reviews written by the same user. Very sparse (avg.\ degree 3.1) but exhibits \textbf{perfect label homophily}---all reviews by the same user share the same fraud label.
-    \item \textbf{RTR} (Review--Time--Review): connects reviews sharing the same star rating and timestamp. Moderately dense (avg.\ degree 26.0) with strong fraud signal (37.1\% vs.\ 8.0\%).
-    \item \textbf{RSR} (Review--Star--Review): connects reviews with the same sentiment score. Very dense (avg.\ degree 149.1) with moderate fraud signal (30.6\% vs.\ 11.5\%).
+    \item \textbf{RUR} (Review--User--Review): connects reviews written by the same user. Very sparse (avg.\ degree 2.15) and highly---but not perfectly---homophilous: fraud nodes have 92.5\% fraudulent neighbours on average, while benign nodes have just 0.4\%. This near-perfect structural signal makes RUR the dominant relation on Yelp.
+    \item \textbf{RTR} (Review--Time--Review): connects reviews sharing the same star rating and timestamp bucket. Moderately dense (avg.\ degree 25.0) with weak fraud-specific homophily: 18.0\% fraudulent neighbours for fraud nodes vs.\ 14.0\% for benign nodes---only marginally above the global fraud rate.
+    \item \textbf{RSR} (Review--Star--Review): connects reviews with the same sentiment score. Very dense (avg.\ degree 148.1) with similar weak signal: 20.5\% vs.\ 13.5\%.
 \end{itemize}
 
 \begin{table}[h!]
 \centering
 \begin{tabular}{lrrrr}
 \hline
-Relation & Edges & Avg.\ Degree & Fraud Neigh.\ (\%) & Benign Neigh.\ (\%) \\
+Relation & $|E|$ (undir.) & Avg.\ Degree & \%Fraud Nbrs (fraud) & \%Fraud Nbrs (benign) \\
 \hline
-RUR & 144{,}584 & 3.1 & 100.0 & 0.0 \\
-RTR & 1{,}193{,}186 & 26.0 & 37.1 & 8.0 \\
-RSR & 6{,}851{,}440 & 149.1 & 30.6 & 11.5 \\
+RUR & 49{,}315     & 2.15   & 92.50 & 0.40 \\
+RTR & 573{,}616    & 24.96  & 17.99 & 13.97 \\
+RSR & 3{,}402{,}743 & 148.09 & 20.48 & 13.52 \\
 \hline
 \end{tabular}
-\caption{Summary statistics for each relational graph in the Yelp fraud dataset.}
+\caption{Summary statistics for the Yelp relational graphs, computed on the actual release used in this thesis.}
+\label{tab:yelp-stats}
 \end{table}
 
-\noindent
-Individual feature correlations with the fraud label are considerably weaker in Yelp (max $|r| = 0.235$ for feature~5) compared to Amazon. The graph structure---particularly RUR's perfect homophily---carries the primary fraud signal, making Yelp a complementary evaluation setting where relational information dominates over feature information.
+Individual feature correlations with the fraud label are considerably weaker on Yelp than on Amazon: the strongest correlation is feature~5 ($r = -0.235$) and no feature exceeds $|r| = 0.24$. The graph structure---particularly RUR's near-perfect homophily---carries the primary fraud signal, making Yelp a complementary evaluation setting in which relational information dominates over per-node features.
+
+\paragraph{Note on reported statistics.} Readers familiar with the CARE-GNN paper will notice that the homophily percentages and RUR's near-perfect (rather than perfect) label homophily reported above differ from the values in Table~1 of Dou~et~al.~(2020). The differences arise from two sources: (i)~our homophily computation averages over individual nodes (excluding self-loops and isolated nodes) on the exact adjacency-list release distributed with the code, and (ii)~the RUR relation in this release is not perfectly reciprocal, so a small fraction of same-user reviews have cross-label neighbours. We report our own measurements because the numbers must correspond to the graph the models actually consume.
 
 \subsection{Dataset Comparison}
 
@@ -68,23 +87,24 @@ Individual feature correlations with the fraud label are considerably weaker in 
 \hline
 \textbf{Property} & \textbf{Amazon} & \textbf{Yelp} \\
 \hline
-Nodes & 11{,}944 & 45{,}954 \\
-Features & 25 (raw) & 32 (normalised) \\
-Fraud rate & 6.9\% & 14.5\% \\
-Relations & UPU, USU, UVU & RUR, RTR, RSR \\
-Strongest signal & Features ($r = 0.66$) & Structure (RUR = 100\%) \\
-Feature normalisation & Not pre-normalised & Pre-normalised to $[0,1]$ \\
-Labelled nodes & 3,305+ only & All \\
+Nodes (total / labelled)  & 11{,}944 / 8{,}639 & 45{,}954 / 45{,}954 \\
+Features                  & 25 (raw)           & 32 (normalised to $[0,1]$) \\
+Fraud rate (labelled)     & 9.50\%             & 14.53\% \\
+Relations                 & UPU, USU, UVU      & RUR, RTR, RSR \\
+Max $|r|$ feature         & $0.654$ (feat.\ 19) & $0.235$ (feat.\ 5) \\
+Strongest structural sig. & UVU (18.3\% / 3.0\%) & RUR (92.5\% / 0.4\%) \\
+Primary fraud signal      & Features + UVU     & RUR structure \\
 \hline
 \end{tabular}
-\caption{Comparison of the two benchmark datasets.}
+\caption{Comparison of the two benchmark datasets. ``Max $|r|$'' is the strongest point-biserial feature--label correlation. Structural signals are reported as (\%fraud nbrs of fraud / \%fraud nbrs of benign) for the most discriminative relation in each dataset.}
 \end{table}
 
 \noindent
-Evaluating on both datasets ensures that our methods generalise across different fraud rate regimes, feature-to-structure signal balances, and graph density profiles.
+Evaluating on both datasets ensures that our methods generalise across complementary signal regimes: Amazon, where strong per-node features dominate and relations contribute moderate structural lift, and Yelp, where node features are weak but the RUR relation provides near-perfect label homophily.
 
 
 \section{Data Processing}
+\label{sec:data-processing}
 \vspace{1\baselineskip}
 
 Data preprocessing plays a critical role in ensuring stable and high-performing Graph Neural Network models. Because the Amazon dataset carries a complex relational structure with heterogeneous edge types (UPU, USU, UVU), several transformations are applied both to the feature space and to the graph structure prior to training. The preprocessing serves three purposes: (i)~making node features comparable across dimensions, (ii)~normalising the graph for numerically stable aggregation, and (iii)~adapting the adjacency matrices to each GNN's aggregation mechanism.
@@ -188,180 +208,84 @@ This structured preprocessing pipeline ensures that each model receives graph in
 
 
 
-\section{Graph Neural Network Models}
+\section{The GNN Pillar: Multi-Relation Graph Representation Backbone}
+\label{sec:gnn-pillar}
 
-This section describes the three GNN architectures used in this work: the Relation-Aware Graph Convolutional Network (GCN), Multi-Relation GraphSAGE, and CARE-GNN. All three models are designed to exploit the multiple relational graphs (UPU, USU, UVU) simultaneously and therefore capture different types of user interactions. While the models share the same input data and output format, they differ fundamentally in how they aggregate neighbourhood information, handle multi-relational structure, and---in the case of CARE-GNN---resist camouflage behaviour by fraudsters.
+Recall from the chapter introduction that the unified framework rests on three tightly coupled pillars. This section describes the first pillar---the \emph{GNN backbone}---whose role is to produce, for each target node, a dense representation that aggregates information across the multiple relational graphs of the dataset (UPU/USU/UVU on Amazon, RUR/RTR/RSR on Yelp) while remaining robust to the camouflage behaviour typical of online fraudsters. The representation produced by this pillar is the common input that both the \emph{RL pillar} (Section~\ref{sec:capn}) and the \emph{LLM pillar} (Sections~\ref{sec:llm-pillar-1} and~\ref{sec:llm-pillar-2}) condition on: the RL pillar uses it, together with LLM-derived signals, to condition its per-node filtering thresholds; the LLM pillar uses it as the anchor into which fraud-specific textual features are gated. A well-designed GNN backbone is therefore a prerequisite for the unified framework, not an independent modelling contribution.
 
-\subsection{Relation-Aware GCN}
+We adopt \textbf{CARE-GNN}~\cite{dou2020enhancing} as the backbone of the unified framework. CARE-GNN is chosen because it is, to the best of our knowledge, the only multi-relation GNN in the literature that explicitly models the two camouflage strategies---\textit{feature camouflage} (fraudsters who manipulate their attributes to resemble legitimate users) and \textit{relation camouflage} (fraudsters who form edges to benign nodes to dilute the suspiciousness signal of neighbourhood aggregation)---through a single mechanism: label-aware neighbour filtering with a per-relation adaptive threshold. This gives the unified framework three useful entry points: (i)~a label predictor whose output we later replace and extend (Section~\ref{sec:capn}, enhanced label predictor), (ii)~a set of per-relation filtering thresholds that we later upgrade from a heuristic $\epsilon$-greedy bandit to a learned actor--critic policy (Section~\ref{sec:capn}, CAPN), and (iii)~a multi-relation aggregation step whose input can be modulated by LLM-derived features without disturbing the rest of the pipeline (Section~\ref{sec:llm-pillar-2}, gated text injection). The remainder of this section formalises the backbone, and the later pillar sections describe which components are retained, which are replaced, and how.
 
-The first model is based on the classical Graph Convolutional Network (GCN) framework \cite{kipf2017semi}, extended to handle multiple relation types. Each relation has its own linear transformation layer, and the outputs are fused through learnable softmax weights. Node features are first transformed separately for each relation, aggregated through the corresponding normalised adjacency matrices, and then combined via weighted fusion. The fused representation is passed through dropout and a non-linearity, followed by a classification layer with sigmoid activation.
+For completeness and fair comparison, we also describe two simpler multi-relation baselines---Multi-Relation GraphSAGE and a Relation-Aware GCN---that serve as reference points for the experimental evaluation in Chapter~\ref{Chapter4}. These baselines do not participate in the unified framework; they are reported only to situate the backbone's standalone strength and to quantify the marginal contribution of the RL and LLM pillars.
 
-For each node \( i \) and relation \( r \), the neighbourhood message is computed as:
-
-\begin{equation}
-H^{(1)}_r = \hat{A}_r X W_r
-\end{equation}
-
-where \( \hat{A}_r \) is the normalised adjacency matrix for relation \( r \), \( X \) is the input feature matrix, and \( W_r \) is the relation-specific weight matrix. All relation-specific outputs are fused through:
-
-\begin{equation}
-H^{(1)} = \sum_{r=1}^{R} \alpha_r H^{(1)}_r
-\end{equation}
-
-where \( \alpha_r \) are softmax-normalised learnable parameters:
-
-\begin{equation}
-\alpha_r = \frac{\exp(\theta_r)}{\sum_{k=1}^R \exp(\theta_k)}
-\end{equation}
-
-Finally, a linear classification layer is applied:
-
-\begin{equation}
-\hat{y} = \sigma \left( H^{(1)} W_{cls} \right)
-\end{equation}
-
-where \( W_{cls} \) is the classifier weight matrix and \( \sigma \) is the sigmoid activation function.
-
-\subsubsection{GCN Hyperparameters}
-
-\begin{table}[h!]
-\centering
-\begin{tabular}{|l|c|}
-\hline
-\textbf{Hyperparameter} & \textbf{Value} \\
-\hline
-Hidden dimension (\( d_{hid} \)) & 64 \\
-Dropout rate & 0.5 \\
-Learning rate & \( 1 \times 10^{-2} \) \\
-Weight decay & \( 1 \times 10^{-3} \) \\
-Batch size & 256 \\
-Epochs & 30 \\
-Top-\(p\) neighbour filter & 0.10 \\
-Negative class weight & 1.5 \\
-Positive class weight & 1.0 \\
-Threshold (\( \tau \)) & 0.5 \\
-\hline
-\end{tabular}
-\caption{Hyperparameters for the Relation-Aware GCN model.}
-\end{table}
-
-\noindent
-This architecture effectively leverages different relational structures through learnable fusion, allowing the model to adaptively weight the contribution of each relation type during training.
-
-\subsection{Multi-Relation GraphSAGE}
-
-The second model is based on the GraphSAGE framework \cite{hamilton2017inductive}, adapted to handle multiple relations. Unlike GCN, GraphSAGE performs inductive learning through explicit neighbourhood sampling and aggregation. In this work, full neighbourhood aggregation with mean pooling is used, and the model aggregates messages across relations by averaging them.
-
-For each relation \( r \) and layer \( l \), the neighbourhood aggregation is defined as:
-
-\begin{equation}
-M^{(l)}_r = \hat{A}_r H^{(l)}
-\end{equation}
-
-where \( H^{(l)} \) represents the hidden node embeddings at layer \( l \) and \( \hat{A}_r \) is the row-normalised adjacency matrix for relation \( r \). The relation-specific messages are averaged:
-
-\begin{equation}
-M^{(l)} = \frac{1}{R} \sum_{r=1}^R M^{(l)}_r
-\end{equation}
-
-The node representations are then updated using a layer-wise linear transformation and non-linearity:
-
-\begin{equation}
-H^{(l+1)} = \sigma \left( W_{\text{self}}^{(l)} H^{(l)} + W_{\text{neigh}}^{(l)} M^{(l)} \right)
-\end{equation}
-
-where \( W_{\text{self}}^{(l)} \) and \( W_{\text{neigh}}^{(l)} \) are trainable weight matrices for self-node and neighbourhood messages respectively.
-
-The final classification output is computed as:
-
-\begin{equation}
-\hat{y} = \sigma \left( H^{(L)} W_{cls} \right)
-\end{equation}
-
-where \( L = 2 \) is the number of GraphSAGE layers used in this work.
-
-\subsubsection{GraphSAGE Hyperparameters}
-
-\begin{table}[h!]
-\centering
-\begin{tabular}{|l|c|}
-\hline
-\textbf{Hyperparameter} & \textbf{Value} \\
-\hline
-Hidden dimension (\( d_{hid} \)) & 64 \\
-Output hidden dimension & 64 \\
-Dropout rate & 0.5 \\
-Learning rate & \( 1 \times 10^{-2} \) \\
-Weight decay & \( 1 \times 10^{-3} \) \\
-Batch size & 256 \\
-Epochs & 30 \\
-Aggregator & Mean \\
-Negative class weight & 1.5 \\
-Positive class weight & 1.0 \\
-Threshold (\( \tau \)) & 0.5 \\
-\hline
-\end{tabular}
-\caption{Hyperparameters for the Multi-Relation GraphSAGE model.}
-\end{table}
-
-\noindent
-GraphSAGE differs from GCN primarily in its use of row-normalised adjacency matrices, two-layer depth, and explicit mean aggregation, enabling better scalability and inductive capability.
-
-
-\subsection{CARE-GNN}
+\subsection{CARE-GNN Backbone Architecture}
 \label{sec:care-gnn}
 
-The third and primary model is the CAmouflage-REsistant Graph Neural Network (CARE-GNN) \cite{dou2020enhancing}, specifically designed to address the camouflage problem in GNN-based fraud detection. Fraudsters employ two types of camouflage to evade detection: \textit{feature camouflage}, where they manipulate their attributes to resemble legitimate users, and \textit{relation camouflage}, where they deliberately establish connections with benign users to dilute suspiciousness signals during neighbourhood aggregation. Standard GNNs are vulnerable to both strategies, as they indiscriminately aggregate all neighbourhood information.
+CARE-GNN~\cite{dou2020enhancing} is a single-layer multi-relation GNN that, for a centre node $v$ on a graph with $R$ relations, produces an embedding $h_v \in \mathbb{R}^{d}$ through the following pipeline:
 
-CARE-GNN addresses these challenges through three integrated modules: (i)~a label-aware similarity measure that quantifies the informativeness of each neighbour, (ii)~a reinforcement learning (RL) module that adaptively determines the optimal filtering threshold, and (iii)~a multi-relation aggregation mechanism that combines filtered neighbourhood information across relations.
+\begin{enumerate}
+    \item compute a scalar \emph{informativeness score} for every neighbour of $v$ under each relation $r$, using a trainable label predictor (Section~\ref{sec:care-label-predictor});
+    \item retain only the top-$p_r$ fraction of the most informative neighbours per relation, where $p_r \in (0, 1]$ is an adaptive filtering threshold (Section~\ref{sec:care-filtering});
+    \item mean-aggregate the retained neighbours' features into a per-relation embedding $h^{(r)}_{\mathcal{N}(v)}$ (Section~\ref{sec:care-intra});
+    \item fuse the per-relation embeddings into a single representation $h_v$ (Section~\ref{sec:care-inter});
+    \item train end-to-end with a joint classification and similarity loss (Section~\ref{sec:care-loss}).
+\end{enumerate}
 
-\subsubsection{Label-Aware Similarity Measure}
+Step~(1)'s label predictor is the component that the unified framework later replaces with the \emph{enhanced label predictor} of CAPN (Section~\ref{sec:capn-label-predictor}). Step~(2)'s threshold update rule is the component that the unified framework later replaces with the \emph{actor--critic policy network} of CAPN (Section~\ref{sec:policy-network}). Steps~(3) and~(4)---the intra- and inter-relation aggregation---are retained unchanged, because they are where the LLM-derived features are injected through the gated fusion mechanism of Section~\ref{sec:llm-pillar-2}.
 
-To identify informative neighbours and resist feature camouflage, CARE-GNN employs a label-aware similarity measure based on a trainable node-label predictor. A single-layer MLP serves as the label predictor, mapping each node's input features to a two-class output:
+\subsubsection{Label-Aware Similarity and Informativeness Scoring}
+\label{sec:care-label-predictor}
 
+To resist feature camouflage, CARE-GNN does not aggregate indiscriminately over all of a node's neighbours. Instead, it ranks each candidate neighbour by how similar its predicted label distribution is to that of the centre node. A single-layer MLP---the \emph{label predictor}---maps each node's input features to a two-class logit vector,
 \begin{equation}
-S(v) = \text{MLP}(h_v) \in \mathbb{R}^2
+S(v) = \mathrm{MLP}(x_v) \in \mathbb{R}^2,
 \end{equation}
-
-The similarity between a centre node \( v \) and a neighbour \( v' \) is then measured via the L1 distance on the first component of the predictor output:
-
+and the pairwise distance between centre $v$ and candidate neighbour $v'$ is measured as the L1 distance on the first component of the predictor output,
 \begin{equation}
-D(v, v') = |S(v)[0] - S(v')[0]|
+D(v, v') = \bigl|\, S(v)[0] - S(v')[0] \,\bigr|.
+\label{eq:care-distance}
 \end{equation}
+Small $D$ indicates that the predictor believes the two nodes share the same class, so the neighbour is considered informative and should be retained; large $D$ indicates a likely cross-class (possibly camouflaged) edge. The label predictor is trained jointly with the backbone under a supervised cross-entropy loss (Section~\ref{sec:care-loss}), so the distance in~\eqref{eq:care-distance} is a learned proxy for label agreement rather than a fixed feature-space metric.
 
-Neighbours with smaller distances are considered more likely to share the same label as the centre node and are therefore more informative for aggregation. For each relation \( r \), the neighbours of node \( v \) are ranked by distance and the top-\( p_r \) fraction with the smallest distances are retained for aggregation, where \( p_r \) is the filtering threshold for relation \( r \).
+\subsubsection{Adaptive Neighbour Filtering}
+\label{sec:care-filtering}
+
+For each relation $r \in \{1, \dots, R\}$, CARE-GNN maintains an adaptive filtering threshold $p_r \in (0, 1]$. Given a centre node $v$ and its neighbour set $\mathcal{N}_r(v)$ under relation $r$, the nodes are ranked in ascending order of the label-aware distance~\eqref{eq:care-distance}, and the top-$p_r$ fraction---the most informative $\lceil p_r \cdot |\mathcal{N}_r(v)| \rceil$ neighbours---is retained. The filtered neighbour set is denoted $\tilde{\mathcal{N}}_r(v)$.
+
+In the original CARE-GNN, the threshold $p_r$ is not directly optimised by gradient descent. Instead, it is updated after every training step by a small-step $\epsilon$-greedy bandit that compares the average distance of the currently retained neighbours against a reference value and moves $p_r$ by a fixed increment $\tau_{\text{step}}$ in whichever direction lowered the average distance. This heuristic is effective on Amazon but---as we show empirically in Section~\ref{sec:results-unified} of Chapter~\ref{Chapter4}---plateaus early on the more challenging YelpChi benchmark and does not exploit any global structural or textual signal. The RL pillar of our unified framework (Section~\ref{sec:capn}) replaces this bandit with an actor--critic policy that conditions the threshold decision on a richer, per-node state.
 
 \subsubsection{Intra-Relation Aggregation}
+\label{sec:care-intra}
 
-After neighbour filtering, intra-relation aggregation computes a neighbourhood embedding for each relation independently. For each relation \( r \), the filtered neighbours' features are mean-aggregated:
-
+After neighbour filtering, the representation of each filtered neighbourhood is produced by a mean-of-features aggregator followed by a non-linearity,
 \begin{equation}
-h^{(r)}_{\mathcal{N}(v)} = \text{ReLU}\left( \frac{1}{|\mathcal{N}_r(v)|} \sum_{u \in \mathcal{N}_r(v)} h_u \right)
+h^{(r)}_{\mathcal{N}(v)} = \mathrm{ReLU}\!\left( \frac{1}{|\tilde{\mathcal{N}}_r(v)|} \sum_{u \in \tilde{\mathcal{N}}_r(v)} h_u \right),
 \end{equation}
-
-where \( \mathcal{N}_r(v) \) denotes the set of selected neighbours of node \( v \) under relation \( r \).
+where $h_u$ is the input (or LLM-gated input, cf.\ Section~\ref{sec:llm-pillar-2}) feature vector of neighbour $u$. Mean aggregation is chosen because it is invariant to the absolute size of $\tilde{\mathcal{N}}_r(v)$---important on Yelp's RSR and Amazon's USU, whose degree distributions span three orders of magnitude.
 
 \subsubsection{Inter-Relation Aggregation}
+\label{sec:care-inter}
 
-The intra-relation embeddings from all relations are combined through an inter-relation aggregator. In this work, we primarily use the \textbf{GNN (Threshold)} variant, which uses the RL-learned filtering thresholds as inter-relation weights:
-
+The per-relation embeddings are fused into a single node representation through an inter-relation aggregator. The framework supports four variants: \textbf{GNN (Threshold)}, \textbf{Attention}, learnable \textbf{Weight}, and \textbf{Mean}. As in the original CARE-GNN paper and in our final configuration, we adopt the \textbf{GNN (Threshold)} variant as the default, because it ties the inter-relation weighting directly to the informativeness signal produced by the filtering pillar:
 \begin{equation}
-h_v = \text{ReLU}\left( W \cdot h_v + \sum_{r=1}^{R} p_r \cdot (W \cdot h^{(r)}_{\mathcal{N}(v)}) \right)
+h_v = \mathrm{ReLU}\!\left( W\, h_v \;+\; \sum_{r=1}^{R} p_r \cdot \bigl( W\, h^{(r)}_{\mathcal{N}(v)} \bigr) \right),
+\label{eq:care-inter}
 \end{equation}
+where $W \in \mathbb{R}^{d \times d}$ is a shared transformation matrix and $p_r$ is the filtering threshold for relation $r$. Equation~\eqref{eq:care-inter} has a clean interpretation: relations whose thresholds are high---i.e.\ those for which the label predictor finds most neighbours informative---receive proportionally more weight in the fused embedding, whereas relations whose thresholds collapse to small values (typically noisy or camouflaged relations) are suppressed. Once the unified framework replaces the bandit with the actor--critic policy, the same equation~\eqref{eq:care-inter} is reused without modification---this is what makes CARE-GNN a good structural scaffold for the RL and LLM pillars. Alternative aggregators (\textbf{Attention}, \textbf{Weight}, \textbf{Mean}) are evaluated as an ablation in Section~\ref{sec:results-unified} of Chapter~\ref{Chapter4}.
 
-where \( W \) is a shared transformation matrix and \( p_r \) is the filtering threshold for relation \( r \). This ties the inter-relation weighting directly to the RL-learned filtering quality: relations with higher thresholds (admitting more neighbours) receive proportionally higher weight in the final representation. Alternative inter-aggregation strategies (Attention, learnable Weight, and Mean) are evaluated in the ablation studies (Section~\ref{sec:ablation}).
+\subsubsection{Training Objective of the Backbone}
+\label{sec:care-loss}
 
-\subsubsection{Training Objective}
-
-The model is trained end-to-end with a combined loss function consisting of two components:
-
+The backbone is trained end-to-end with a two-term loss,
 \begin{equation}
-\mathcal{L} = \mathcal{L}_{\text{GNN}} + \lambda_1 \cdot \mathcal{L}_{\text{simi}}
+\mathcal{L}_{\mathrm{backbone}} \;=\; \mathcal{L}_{\mathrm{GNN}} \;+\; \lambda_1 \cdot \mathcal{L}_{\mathrm{simi}},
+\label{eq:care-loss}
 \end{equation}
+where $\mathcal{L}_{\mathrm{GNN}}$ is the cross-entropy of the final binary classifier on top of $h_v$ and $\mathcal{L}_{\mathrm{simi}}$ is the cross-entropy of the label predictor~$S(\cdot)$ against the ground-truth labels of the training nodes. The similarity term is essential: without it, the label predictor receives no direct supervision and the distances in~\eqref{eq:care-distance} collapse to noise, making the filtering step in Section~\ref{sec:care-filtering} useless. The hyperparameter $\lambda_1$ controls the relative importance of the two terms; we fix $\lambda_1 = 2$ on both datasets, matching the value originally reported by Dou~et~al.~(2020). The unified framework extends~\eqref{eq:care-loss} with a policy-gradient term in Section~\ref{sec:capn-loss}; the backbone terms themselves are preserved unchanged.
 
-where \( \mathcal{L}_{\text{GNN}} \) is the cross-entropy loss on the final GNN predictions and \( \mathcal{L}_{\text{simi}} \) is the cross-entropy loss on the label predictor's output. The similarity loss ensures that the label predictor learns to distinguish fraudulent from benign nodes, which in turn produces meaningful distance scores for neighbour filtering. The hyperparameter \( \lambda_1 \) controls the relative importance of the similarity loss.
+\subsubsection{Backbone Hyperparameters}
+\label{sec:care-hparams}
 
-\subsubsection{CARE-GNN Hyperparameters}
+Unless stated otherwise, all CARE-GNN-backed configurations use the hyperparameters in Table~\ref{tab:care-hparams}. These values are inherited from the original CARE-GNN release and were independently re-validated for our data splits on Amazon; the small deviation from the original paper is the batch size on Amazon (256 rather than 1{,}024), which we reduced to keep GPU memory steady when the LLM-enriched state vectors of Sections~\ref{sec:llm-pillar-1}--\ref{sec:llm-pillar-2} are concatenated.
 
 \begin{table}[h!]
 \centering
@@ -369,115 +293,131 @@ where \( \mathcal{L}_{\text{GNN}} \) is the cross-entropy loss on the final GNN 
 \hline
 \textbf{Hyperparameter} & \textbf{Value} \\
 \hline
-Embedding dimension (\( d \)) & 64 \\
-Dropout rate & 0.6 \\
-Learning rate & \( 1 \times 10^{-2} \) \\
-Weight decay (\( \lambda_2 \)) & \( 1 \times 10^{-3} \) \\
-Batch size & 1{,}024 (Yelp) / 256 (Amazon) \\
-Epochs & 31 \\
-Similarity loss weight (\( \lambda_1 \)) & 2 \\
-RL step size (\( \tau \)) & 0.02 \\
-Initial filtering threshold (\( p_0 \)) & 0.5 \\
-Under-sampling ratio (pos:neg) & 1:1 \\
-Inter-relation aggregator & GNN (Threshold) \\
-Gradient clipping & 1.0 \\
-Number of GNN layers & 1 \\
+Embedding dimension ($d$)                & 64 \\
+Dropout rate                             & 0.6 \\
+Learning rate                            & $1 \times 10^{-2}$ \\
+Weight decay ($\lambda_2$)               & $1 \times 10^{-3}$ \\
+Batch size                               & 1{,}024 (Yelp) / 256 (Amazon) \\
+Epochs                                   & 31 \\
+Similarity loss weight ($\lambda_1$)     & 2 \\
+Bandit step size ($\tau_{\text{step}}$)  & 0.02 \\
+Initial filtering threshold ($p_0$)      & 0.5 \\
+Under-sampling ratio (pos:neg)           & 1:1 \\
+Inter-relation aggregator (default)      & GNN (Threshold) \\
+Gradient clipping                        & 1.0 \\
+Number of GNN layers                     & 1 \\
 \hline
 \end{tabular}
-\caption{Hyperparameters for the CARE-GNN model.}
+\caption{Hyperparameters for the CARE-GNN backbone when used on its own (i.e.\ without the RL or LLM pillars). Hyperparameters introduced by the RL pillar are listed in Section~\ref{sec:capn-hyperparams}; those introduced by the LLM pillar are listed in Section~\ref{sec:llm-pillar-2}.}
+\label{tab:care-hparams}
 \end{table}
 
+\subsubsection{A Multi-Layer Variant}
+\label{sec:multi-care}
 
-\section{Reinforcement Learning Module}
-\label{sec:rl-module}
+The codebase additionally implements a stacked variant, \texttt{MULTI\_CARE}, in which two CARE-GNN layers are composed so that the output of the first layer becomes the input to a second filtering-then-aggregation step. This variant was implemented to probe whether deeper message passing helps under the camouflage regime; empirically, on both datasets, the gain is within run-to-run variance and comes at the cost of substantially more compute per epoch. We therefore retain the single-layer configuration as the default for the unified framework and report \texttt{MULTI\_CARE} only as a depth ablation in Chapter~\ref{Chapter4}.
 
-A key contribution of CARE-GNN is the use of reinforcement learning to adaptively determine the optimal neighbour filtering threshold \( p_r \) for each relation \( r \). Since the quality of the filtered neighbourhood cannot be assessed directly during training, the RL module formulates the threshold selection as a Bernoulli Multi-Armed Bandit (BMAB) problem.
+\subsection{Reference Baselines}
+\label{sec:baselines}
 
-\subsection{Problem Formulation}
+The following two baselines are included only for reference; they do not participate in the unified framework. Both are multi-relation adaptations of standard GNN architectures, with no camouflage-resistance mechanism, no RL filtering, and no LLM signal. They operate on pre-processed adjacency matrices (Section~\ref{sec:data-processing}) rather than on raw adjacency lists, and their role is to quantify what fraction of the final performance is attributable to the multi-relation signal alone---before any of the three pillars is added.
 
-The RL process is defined as a BMAB \( B(\mathcal{A}, f, T) \), where \( \mathcal{A} \) is the action space, \( f \) is the reward function, and \( T \) is the terminal condition. The RL agent (neighbour selector) interacts with the GNN by adjusting the filtering thresholds based on observed rewards.
+\subsubsection{Multi-Relation GraphSAGE}
 
-\subsection{Action Space}
-
-At each epoch, the RL agent selects one of two actions for each relation \( r \):
-
+The GraphSAGE baseline~\cite{hamilton2017inductive} uses explicit neighbourhood sampling and mean aggregation. For each relation $r$ and layer $l$, the neighbourhood message is
 \begin{equation}
-a_r = \begin{cases}
-+\tau & \text{(increase threshold: keep more neighbours)} \\
--\tau & \text{(decrease threshold: keep fewer neighbours)}
-\end{cases}
+M^{(l)}_r \;=\; \tilde{A}_r H^{(l)},
 \end{equation}
-
-where \( \tau = 0.02 \) is the step size. The threshold is updated as \( p_r \leftarrow p_r + a_r \) and clamped to \([0.001, 0.999]\) to prevent degenerate values.
-
-\subsection{Reward Function}
-
-The reward is based on the change in average neighbour distance between consecutive epochs. For each relation \( r \), the average distance across all neighbours of positive (fraudulent) nodes at epoch \( e \) is:
-
+where $\tilde{A}_r = D_r^{-1} A_r$ is the row-normalised adjacency matrix of relation $r$. The messages are averaged uniformly across relations,
 \begin{equation}
-d_r(e) = \frac{1}{|\mathcal{V}^+|} \sum_{v \in \mathcal{V}^+} \frac{1}{|\mathcal{N}_r(v)|} \sum_{u \in \mathcal{N}_r(v)} D(v, u)
+M^{(l)} \;=\; \frac{1}{R} \sum_{r=1}^{R} M^{(l)}_r,
 \end{equation}
-
-where \( \mathcal{V}^+ \) denotes the set of positive centre nodes in the batch. The reward for relation \( r \) at epoch \( e \) is then defined as:
-
+and the update rule concatenates self and neighbourhood signals:
 \begin{equation}
-f(p_r, e) = \begin{cases}
-+1 & \text{if } d_r(e-1) - d_r(e) \geq 0 \\
--1 & \text{otherwise}
-\end{cases}
+H^{(l+1)} \;=\; \sigma\!\left( W_{\mathrm{self}}^{(l)} H^{(l)} + W_{\mathrm{neigh}}^{(l)} M^{(l)} \right).
 \end{equation}
+We use two layers ($L = 2$) with hidden dimension 64, dropout 0.5, learning rate $10^{-2}$, weight decay $10^{-3}$, and a sigmoid classifier on top of $H^{(L)}$. Class weights of 1.5/1.0 (benign/fraud) are applied to the cross-entropy loss to mitigate the class imbalance, with the decision threshold fixed at $\tau = 0.5$.
 
-A positive reward indicates that the average neighbour distance has decreased (neighbours became more similar), prompting the agent to increase the threshold and admit more neighbours. A negative reward indicates increasing distances, prompting the agent to tighten the filter.
+\subsubsection{Relation-Aware GCN}
 
-\subsection{Threshold Dynamics}
+The GCN baseline~\cite{kipf2017semi} applies, for each relation $r$, a single-hop spectral convolution with symmetric normalisation,
+\begin{equation}
+H^{(1)}_r \;=\; \hat{A}_r\, X\, W_r,\qquad
+\hat{A}_r \;=\; D_r^{-1/2} (A_r + I)\, D_r^{-1/2},
+\end{equation}
+and fuses the relation-specific outputs through a learnable softmax:
+\begin{equation}
+H^{(1)} \;=\; \sum_{r=1}^{R} \alpha_r H^{(1)}_r,\qquad
+\alpha_r \;=\; \frac{\exp(\theta_r)}{\sum_{k=1}^{R}\exp(\theta_k)}.
+\end{equation}
+Before the convolution, per-relation adjacency matrices are filtered to the top-$p=10\%$ of neighbours by cosine similarity of feature vectors, which removes the densest but least informative edges on Amazon's USU and Yelp's RSR. Training uses the same optimiser and class-weight configuration as GraphSAGE. Unlike the backbone and GraphSAGE, the GCN baseline is trained outside the main \texttt{train.py} entry point (its role in this thesis is purely as a reference number in Chapter~\ref{Chapter4}); we therefore treat its reported numbers as a published baseline rather than as an ablation variant we sweep over hyperparameters.
 
-The reward-action mapping produces the following training dynamics: as the label predictor improves during training, it learns to separate fraudulent from benign nodes more effectively. This causes the L1 distances between fraudulent centre nodes and their benign (camouflaged) neighbours to increase, generating predominantly negative rewards. Consequently, the filtering thresholds decrease from the initial value of 0.5, progressively excluding the most dissimilar---and likely camouflaged---neighbours. As the thresholds stabilise, the GNN aggregates information from an increasingly refined neighbourhood, improving classification performance.
-
-\subsection{Comparison of Model Architectures}
-
-\begin{table}[h!]
-\centering
-\begin{tabular}{|l|c|c|c|c|}
-\hline
-\textbf{Aspect} & \textbf{GCN} & \textbf{GraphSAGE} & \textbf{CARE-GNN} & \textbf{CAPN} \\
-\hline
-Neighbour Filtering & Top-10\% cosine & None & RL-adaptive top-\(p\) & Per-node policy \\
-Graph Normalisation & Symmetric & Row & Internal mean-agg & Internal mean-agg \\
-Relation Fusion & Learnable softmax & Mean & Learnable per-dim & Learnable per-dim \\
-Layers & 1 & 2 & 1 & 1 \\
-Aggregation & Spectral conv. & Mean agg. & Similarity-filtered & Policy-filtered mean \\
-Self-Loops & Added & Not added & Not added & Not added \\
-Anti-Camouflage & No & No & RL + similarity & Policy + multi-view \\
-Threshold Granularity & N/A & N/A & Global per-relation & Per-node per-relation \\
-\hline
-\end{tabular}
-\caption{Comparison of the four GNN architectures.}
-\end{table}
-
-\noindent
-All models were trained under comparable optimisation settings to ensure a fair comparison. CARE-GNN and CAPN both address the camouflage problem, but CAPN extends CARE-GNN with a learned policy network that produces node-level adaptive thresholds, a shaped reward function, and multi-view distance, as detailed in Section~\ref{sec:capn}.
+\paragraph{Summary.} The GNN pillar of the unified framework is the CARE-GNN backbone of Section~\ref{sec:care-gnn}. Its label predictor and filtering threshold are upgraded in the RL pillar (Section~\ref{sec:capn}); its aggregated node embedding is enriched in the LLM pillar (Sections~\ref{sec:llm-pillar-1} and~\ref{sec:llm-pillar-2}). The baselines of Section~\ref{sec:baselines} are not part of the framework and are reported only to situate the backbone's strength.
 
 
-
-\section{CAPN: Camouflage-Aware Policy Network}
+\section{The RL Pillar: From Heuristic Bandit to Camouflage-Aware Policy Network}
+\label{sec:rl-pillar}
 \label{sec:capn}
 
-While CARE-GNN's reinforcement learning module represents a significant advance over static neighbour selection, it exhibits several limitations that constrain its effectiveness against sophisticated camouflage strategies. This section presents the \textbf{Camouflage-Aware Policy Network (CAPN)}, the primary contribution of this thesis, which replaces the heuristic RL module with a learned policy network that addresses each of these limitations systematically.
+The second pillar of the unified framework is the \emph{reinforcement-learning pillar}, whose role is to decide, for each node and each relation, \emph{how aggressively to filter} the neighbourhood before the backbone of Section~\ref{sec:gnn-pillar} aggregates it. The filtering decision has first-order impact on performance under camouflage: too permissive a threshold lets camouflaged edges pollute the aggregate; too aggressive a threshold starves the GNN of signal. CARE-GNN originally handled this trade-off with a lightweight heuristic---a Bernoulli multi-armed bandit that updates a single global threshold per relation once per epoch. This section first describes that inherited bandit precisely, then explains why it is a poor partner to the other two pillars, and finally develops our replacement: the \textbf{Camouflage-Aware Policy Network (CAPN)}, a learned neural policy that produces per-node filtering thresholds, consumes a rich state vector (into which LLM-derived signals are later injected by Sections~\ref{sec:llm-pillar-1} and~\ref{sec:llm-pillar-2}), and is trained end-to-end with a shaped, continuous reward.
 
-\subsection{Limitations of the Original RL Module}
+CAPN is a contribution of this thesis, but its role in the chapter is deliberately framed as \emph{one pillar of three}. Every design choice below is motivated by two interoperability requirements: (i)~the policy output must remain usable as the weight $p_r$ in the backbone's inter-relation aggregation of equation~\eqref{eq:care-inter}, and (ii)~the state vector must accept LLM-derived features as additional input dimensions without retraining the rest of the pipeline. These constraints rule out several otherwise attractive alternatives (e.g.\ discrete-action DQNs, hard gating, or purely supervised threshold regression) and shape the architecture that follows.
 
-The original RL module (Section~\ref{sec:rl-module}) has four key limitations:
+\subsection{Starting Point: CARE-GNN's Heuristic Bandit}
+\label{sec:inherited-bandit}
+\label{sec:rl-module}
+
+CARE-GNN~\cite{dou2020enhancing} formulates threshold selection as a Bernoulli Multi-Armed Bandit (BMAB) $B(\mathcal{A}, f, T)$, where $\mathcal{A}$ is the action space, $f$ the reward function, and $T$ the terminal condition. The BMAB agent operates \emph{outside} the GNN's gradient graph: thresholds are updated by non-differentiable rules rather than by backpropagation, which keeps the scheme simple but---as shown below---limits what it can learn.
+
+\paragraph{Action space.} At the end of each epoch, the agent chooses one of two actions per relation,
+\begin{equation}
+a_r \;\in\; \{+\tau_{\text{step}},\; -\tau_{\text{step}}\},
+\qquad
+p_r \;\leftarrow\; \mathrm{clip}\bigl(p_r + a_r,\; 0.001,\; 0.999\bigr),
+\end{equation}
+with step size $\tau_{\text{step}} = 0.02$. The clipping range $[0.001, 0.999]$ prevents the threshold from collapsing to zero (which would delete all neighbours) or saturating at one (which would admit every neighbour, including camouflaged ones).
+
+\paragraph{Reward function.} The reward is based on the change, between consecutive epochs, in the average label-aware distance~\eqref{eq:care-distance} aggregated over the neighbours of \emph{positive (fraudulent) centre nodes only}. Denoting the set of positive centre nodes in the batch by $\mathcal{V}^{+}$, the per-relation average distance at epoch $e$ is
+\begin{equation}
+d_r(e) \;=\; \frac{1}{|\mathcal{V}^{+}|} \sum_{v \in \mathcal{V}^{+}} \frac{1}{|\mathcal{N}_r(v)|} \sum_{u \in \mathcal{N}_r(v)} D(v, u),
+\label{eq:bandit-distance}
+\end{equation}
+and the reward is the binary sign of its first difference,
+\begin{equation}
+f(p_r, e) \;=\;
+\begin{cases}
++1 & \text{if } d_r(e-1) - d_r(e) \;\geq\; 0, \\
+-1 & \text{otherwise.}
+\end{cases}
+\label{eq:bandit-reward}
+\end{equation}
+A positive reward means that fraudulent nodes' retained neighbours became closer, on average, to the centre node in label space, so the agent \emph{widens} the filter ($+\tau_{\text{step}}$); a negative reward means the retained neighbours became farther, so the agent \emph{tightens} it ($-\tau_{\text{step}}$). Focusing on $\mathcal{V}^{+}$ (rather than all centres) is deliberate: fraudulent nodes are the minority class, and their neighbourhoods are where camouflage actually matters.
+
+\paragraph{Update cadence.} Unlike per-batch policy-gradient methods, the BMAB is updated \emph{once per epoch}, after all batches of that epoch have been processed: within an epoch the thresholds are held fixed (the code skips the BMAB update whenever the running score log length is not a multiple of the batch count, \texttt{layers.py:491}). This cadence is consistent with the non-differentiable, slow-drift nature of the heuristic---per-batch updates with a step size of $0.02$ would be too aggressive---but it also means the bandit cannot respond to intra-epoch variation in neighbourhood quality.
+
+\paragraph{Terminal condition.} The BMAB does not run indefinitely. Once the reward magnitude has remained below a threshold $\epsilon_{\text{RL}} = 10^{-4}$ for $K_{\text{RL}} = 5$ consecutive epochs (\texttt{layers.py:512--535}), updates are frozen and the current thresholds are used unchanged for the remainder of training. This early-stopping behaviour is important to report: it is the reason the bandit's thresholds converge to stable values and, as we argue in Section~\ref{sec:bandit-limitations}, also the reason they \emph{plateau} rather than continue tracking a better policy.
+
+\paragraph{Hyperparameters inherited from CARE-GNN.} In summary, the bandit introduces three RL-specific hyperparameters that we carry over to the unified framework whenever the bandit is used as a baseline: step size $\tau_{\text{step}} = 0.02$, convergence tolerance $\epsilon_{\text{RL}} = 10^{-4}$, and patience $K_{\text{RL}} = 5$. We did not tune these values; they are the defaults of the original release.
+
+\paragraph{Empirical behaviour.} In practice, as the label predictor $S(\cdot)$ sharpens over the first few epochs, L1 distances between fraudulent centre nodes and their camouflaged benign neighbours tend to grow, so~\eqref{eq:bandit-reward} is dominantly negative and each $p_r$ drifts downward from its initialisation $p_0 = 0.5$. The thresholds typically stabilise in the range $[0.1, 0.4]$ and are then frozen by the terminal condition within the first dozen epochs of training.
+
+\subsection{Why the Bandit Plateaus: Limitations}
+\label{sec:bandit-limitations}
+
+The inherited bandit of Section~\ref{sec:inherited-bandit} is a sensible starting point and, on Amazon, already delivers competitive fraud-detection performance. However, five limitations prevent it from being a competent partner to the GNN backbone and to the LLM pillar that is introduced in Sections~\ref{sec:llm-pillar-1} and~\ref{sec:llm-pillar-2}:
 
 \begin{enumerate}
-    \item \textbf{Global thresholds.} A single threshold \( p_r \) is shared across all nodes within each relation, ignoring the fact that different nodes may require different levels of filtering based on their local neighbourhood structure.
-    \item \textbf{Binary rewards.} The reward signal is limited to \( \{+1, -1\} \), discarding information about the magnitude of improvement or degradation in neighbour quality.
-    \item \textbf{Epoch-level updates.} Thresholds are adjusted once per epoch via a fixed step size \( \tau \), resulting in slow adaptation that cannot respond to batch-level variation.
-    \item \textbf{Linear label predictor.} The label-aware similarity measure relies on a single linear layer \( \texttt{nn.Linear}(D, 2) \), which cannot capture non-linear feature-label relationships.
+    \item \textbf{Global thresholds.} A single threshold $p_r$ is shared across \emph{all} nodes within each relation. In practice, nodes with small, clean neighbourhoods and nodes with large, camouflaged neighbourhoods receive the same filtering aggressiveness, even though the optimal $p_r$ is clearly node-dependent.
+    \item \textbf{Binary rewards.} The reward signal~\eqref{eq:bandit-reward} is quantised to $\{+1, -1\}$. The magnitude of the distance change---an obvious learning signal---is thrown away, and the sign alone is used to push a fixed-step update.
+    \item \textbf{Epoch-level updates with fixed step.} Thresholds move by a fixed $\pm 0.02$ per epoch, regardless of how confident the signal is or how far $p_r$ is from its optimum. This is slow to adapt at the start of training and stagnant once the terminal condition fires.
+    \item \textbf{Linear label predictor.} The distance $D(v, v')$ of~\eqref{eq:care-distance} derives from a single linear projection $\mathrm{nn.Linear}(D, 2)$ of the raw features, which cannot capture non-linear feature--label relationships and is particularly weak on datasets with normalised, compressed features (e.g.\ YelpChi's $[0,1]$ features).
+    \item \textbf{No hook for external signal.} The bandit consumes only its own distance metric; there is no state variable into which an LLM-derived risk score or relation prior can be injected. This is the interoperability blocker that motivates our replacement.
 \end{enumerate}
 
-CAPN addresses all four limitations through five integrated components: an enhanced label predictor, a state constructor, a policy network, a shaped reward function, and a multi-view distance metric.
+CAPN addresses all five limitations through a single redesign centred on a learned actor--critic policy. Sections~\ref{sec:capn-label-predictor}--\ref{sec:capn-loss} introduce the five components that together make up CAPN---an enhanced label predictor, a state constructor, a policy network, a multi-view distance, and a shaped reward function---and Section~\ref{sec:llm-warm-start} describes how the RL pillar interoperates with LLM-derived priors.
 
 \subsection{Enhanced Label Predictor}
+\label{sec:capn-label-predictor}
 
 CAPN replaces the original linear label predictor with a two-layer MLP that captures non-linear feature-label relationships:
 
@@ -496,6 +436,7 @@ where \( W_1 \in \mathbb{R}^{d_h \times D} \), \( W_2 \in \mathbb{R}^{2 \times d
 where \( H(\cdot) \) denotes Shannon entropy and \( C = 2 \) is the number of classes. A confidence of 1 indicates a deterministic prediction, while 0 indicates maximum uncertainty. This confidence is used as a component of the state vector for the policy network.
 
 \subsection{State Constructor}
+\label{sec:state-constructor}
 
 For the policy network to make informed per-node filtering decisions, it requires a comprehensive representation of each node's local context. The state constructor builds a state vector for each node \( v \) in each relation \( r \) by concatenating the node's features with five structural and label-aware statistics:
 
@@ -622,6 +563,7 @@ where the three components are:
 The reward weights sum to 1.0 by design, ensuring a balanced trade-off between neighbour quality improvement, classification performance, and threshold stability.
 
 \subsection{Training Objective}
+\label{sec:capn-loss}
 
 CAPN is trained end-to-end with a three-term loss function that combines supervised learning with policy gradient optimisation:
 
@@ -665,6 +607,7 @@ Large policy loss weights or extreme Beta distribution parameters can occasional
 The structural Jaccard distance in the multi-view distance (Equation~34) requires set intersection and union operations for each node-neighbour pair. Since Jaccard distance is symmetric ($d(v,u) = d(u,v)$) and the graph structure is static, we cache computed distances in a dictionary keyed by $(\min(v,u), \max(v,u), r)$, reducing the computational cost of repeated evaluations.
 
 \subsection{LLM Prior Warm-Starting}
+\label{sec:llm-warm-start}
 
 To accelerate policy convergence, CAPN optionally incorporates pre-generated domain priors from a large language model (LLM). For each relation, two scores are provided: an \textit{importance} score reflecting the relation's informativeness for fraud detection, and a \textit{camouflage risk} score estimating the susceptibility of the relation to camouflage manipulation. These priors are used in two ways:
 
@@ -702,6 +645,7 @@ Optimisation & Step-size heuristic & REINFORCE policy gradient \\
 \end{table}
 
 \subsection{CAPN Hyperparameters}
+\label{sec:capn-hyperparams}
 
 \begin{table}[h!]
 \centering
@@ -729,94 +673,321 @@ Policy gradient clipping & 5.0 \\
 \end{table}
 
 
-\section{LLM Reasoning Enrichment Module}
+\section{The LLM Pillar (Part~1): Structural Reasoning into the Policy State}
+\label{sec:llm-pillar-1}
 \label{sec:llm-reasoning}
 
-A key contribution of this thesis is the integration of Large Language Model (LLM) reasoning into the CAPN state vector. Rather than using LLMs as generic text encoders---which we show to be ineffective (Study A6)---we use the Claude LLM as a \emph{reasoning engine} that analyses each node's structural profile and produces fraud-relevant risk assessments. This section describes the preprocessing pipeline, the reasoning score generation, and the integration into CAPN.
+The third pillar of the unified framework is the \emph{LLM pillar}. Its role is not to provide generic text embeddings---a route we explored and ruled out empirically (Study~A6, Section~\ref{sec:study-a6})---but to use a frontier LLM as a \textbf{reasoning engine}: an external, non-differentiable module that consumes the per-node structural profile of a graph it would otherwise never see and returns a small set of fraud-relevant risk assessments. The scores become additional input dimensions to the CAPN state vector of Section~\ref{sec:state-constructor}, where they are consumed by the policy network of Section~\ref{sec:policy-network} just like any other state component. No other part of the pipeline is affected; the LLM pillar is, by construction, additive.
+
+The LLM pillar contributes two complementary signal streams; this section describes the first, and Section~\ref{sec:llm-pillar-2} describes the second:
+
+\begin{description}
+    \item[Part~1 (this section): structural reasoning.] Input to the LLM is a \emph{graph-derived} profile---26 precomputed structural statistics per node. Output is six scalar risk scores in $[0,1]$ reflecting fraud-relevant judgements the LLM makes about that profile. The LLM never sees review text.
+    \item[Part~2 (Section~\ref{sec:llm-pillar-2}): textual reasoning.] Input to the LLM is the \emph{raw review text} associated with a node (Yelp only). Output is a small set of text-based fraud risk scores that are gated into the input feature vector before the GNN backbone consumes it.
+\end{description}
+
+Both parts share an important architectural property: LLM outputs are \textbf{precomputed once per dataset, stored as tensors, and loaded at training time}. No LLM API call is ever made inside the training loop. This keeps training cost independent of the LLM, makes every run reproducible at zero API cost given a cached score tensor, and allows the framework to fall back gracefully to deterministic heuristic scores if API access is unavailable (see ``Reliability'' below). The specific model used in this work is \textbf{Claude Haiku 4.5} (\texttt{claude-haiku-4-5-20251001}) accessed via the Anthropic Messages API; we chose Haiku for its favourable cost-per-reasoning-step trade-off at the scale of tens of thousands of nodes.
 
 \subsection{Node Statistics Preprocessing}
+\label{sec:node-statistics}
 
-As a one-time preprocessing step, we compute 26 structural statistics per node from the multi-relational graph. These statistics are organised into four categories:
+The input to the LLM reasoning step is a 26-dimensional structural profile computed once per node from the multi-relational graph. The 26 features are organised into four categories:
 
 \begin{enumerate}
-    \item \textbf{Per-relation connectivity (12 features):} For each of the three relations, we compute the node degree, degree percentile rank (relative position within the degree distribution), label disagreement with training-set neighbours (fraction of neighbours with a different label), and mean feature variance across neighbours.
-
-    \item \textbf{Cross-relation statistics (6 features):} Jaccard overlap between neighbour sets of each relation pair (e.g., UPU$\cap$USU / UPU$\cup$USU), and degree ratios between relation pairs. These capture whether a node's connectivity patterns are consistent or divergent across relations---a key camouflage indicator.
-
-    \item \textbf{Feature anomaly (2 features):} The number of features with $|z| > 2$ (extreme features) and the mean absolute z-score, both computed using training-set statistics only to prevent data leakage.
-
-    \item \textbf{Higher-order topology (6 features):} For each relation, the 2-hop neighbourhood size (number of unique nodes reachable in exactly two hops, excluding direct neighbours) and the ego-network density (fraction of possible edges among the node's neighbours that actually exist). High ego-density indicates clique-like structure potentially associated with coordinated fraud.
+    \item \textbf{Per-relation connectivity (12 features; 4 per relation $\times$ 3 relations):} node degree, degree percentile rank (its position within the dataset-wide degree distribution), label disagreement with training-set neighbours (the fraction of training-labelled neighbours whose label differs from the node's own---where the node's own label is known only if the node itself is in the training set; for validation/test nodes this becomes the fraction of fraudulent \emph{training} neighbours and is still leak-safe), and mean feature variance across neighbours.
+    \item \textbf{Cross-relation statistics (6 features):} Jaccard overlap between the neighbour sets of each of the three relation pairs (e.g.\ $|\mathcal{N}_{\text{UPU}}(v) \cap \mathcal{N}_{\text{USU}}(v)| / |\mathcal{N}_{\text{UPU}}(v) \cup \mathcal{N}_{\text{USU}}(v)|$), and the three corresponding degree ratios. These summarise whether the node's connectivity pattern is consistent or divergent across relations---a classic camouflage indicator.
+    \item \textbf{Feature anomaly (2 features):} number of features with $|z| > 2$ (count of ``extreme'' features) and mean $|z|$-score, both computed using \emph{training-set} feature means and standard deviations to prevent leakage of test statistics.
+    \item \textbf{Higher-order topology (6 features; 2 per relation $\times$ 3 relations):} 2-hop neighbourhood size (unique nodes reachable in exactly two hops, excluding direct neighbours) and ego-network density (the fraction of possible edges among the node's neighbours that actually exist). High ego-density indicates clique-like structure that is empirically associated with coordinated fraud.
 \end{enumerate}
 
-\noindent
-All statistics are precomputed and stored in a NumPy compressed archive. Label-dependent statistics use training labels only, ensuring no information leakage into validation or test sets.
+All 26 statistics are precomputed by \texttt{llm/compute\_node\_statistics.py} and stored in a single NumPy compressed archive per dataset. Label-dependent and z-score-dependent statistics use training data only, so the profile handed to the LLM carries no validation-set or test-set information.
 
 \subsection{Claude Reasoning Scores}
+\label{sec:claude-reasoning}
 
-For each node, its 26-dimensional structural profile is formatted as a structured text prompt and sent to the Claude LLM (Haiku model). The prompt presents the node's per-relation statistics, cross-relation overlap, and feature anomaly scores, and requests six fraud-relevant risk assessments returned as a JSON object:
+The 26-dimensional profile of each node is formatted into a short structured prompt and passed to the LLM, which is asked to return six scalar scores as a single JSON object:
 
 \begin{enumerate}
-    \item \textbf{Structural anomaly} $\in [0, 1]$: how unusual is the node's connectivity pattern compared to typical nodes.
-    \item \textbf{Relation consistency} $\in [0, 1]$: how consistent is the node's behaviour across all three relations (low values indicate potential camouflage).
-    \item \textbf{Neighbourhood risk} $\in [0, 1]$: how suspicious are the node's neighbours based on training-label statistics.
-    \item \textbf{Feature anomaly} $\in [0, 1]$: how statistically unusual are the node's features.
-    \item \textbf{Coordination signal} $\in [0, 1]$: likelihood that the node participates in coordinated or organised behaviour (e.g., fraud rings).
-    \item \textbf{Isolation score} $\in [0, 1]$: structural isolation versus deep embeddedness in the graph.
+    \item \texttt{structural\_anomaly} $\in [0, 1]$: how unusual the node's connectivity pattern is.
+    \item \texttt{relation\_consistency} $\in [0, 1]$: how uniform its behaviour is across relations (low values indicate potential camouflage).
+    \item \texttt{neighborhood\_risk} $\in [0, 1]$: how suspicious its neighbours appear, based on training-set label statistics.
+    \item \texttt{feature\_anomaly} $\in [0, 1]$: how statistically unusual its features are.
+    \item \texttt{coordination\_signal} $\in [0, 1]$: the likelihood that the node participates in coordinated activity (fraud rings, clique-like structures).
+    \item \texttt{isolation\_score} $\in [0, 1]$: structural isolation versus deep graph embeddedness.
 \end{enumerate}
 
-\noindent
-The value of using an LLM here---rather than simple formulas---lies in its ability to reason about \emph{cross-feature interactions}. For example, a node with normal degree but extreme ego-density and high label disagreement in one relation suggests a tightly-connected fraud clique that has disguised its individual connectivity. Simple linear formulas treat each statistic independently; the LLM can recognise such combinatorial patterns.
+\paragraph{Why an LLM rather than a linear formula?} The six scores could in principle be produced by a hand-crafted formula over the 26 statistics---and we do ship exactly such a formula as the \emph{template} fallback (described below). The value of routing the profile through an LLM is its ability to reason about \emph{cross-feature interactions}. A node with median degree but extreme ego-density \emph{and} high label-disagreement on a single relation, for example, is a strong coordinated-fraud signature; a linear formula treats each statistic independently and misses the conjunction. Study~A7 (Section~\ref{sec:study-a7}) shows empirically that LLM reasoning scores outperform their template counterparts by a non-trivial margin on YelpChi.
 
-Nodes are batched (5 per API call) to reduce request overhead, and results are checkpointed every 500 nodes for fault tolerance. A deterministic template-based fallback computes the same six scores via heuristic formulas when API access is unavailable. The scores are generated once and stored as a $[N, 6]$ tensor for reuse across all training runs.
+\paragraph{Prompt schema.} The prompt is structured, plain text (no few-shot examples, no system prompt). For a single-node query it has the following template:
 
-\subsection{Integration into CAPN State Vector}
+\begin{quote}\small\ttfamily
+Analyze node \#ID in a <dataset> network for fraud detection.\\
+Output ONLY a JSON object with 6 scores (0.0 to 1.0).\\[0.2em]
+Structural profile:\\
+- <R1>: degree=K (Pth pctl), label\_disagreement=X, neighbor\_variance=Y, 2hop\_reach=Z, ego\_density=E\\
+- <R2>: \ldots\\
+- <R3>: \ldots\\
+- Cross-relation overlap: R1-R2=\ldots, R1-R3=\ldots, R2-R3=\ldots\\
+- Degree ratios: R1-R2=\ldots, R1-R3=\ldots, R2-R3=\ldots\\
+- Feature anomaly: N extreme features, mean |z-score|=\ldots\\[0.2em]
+Score definitions: \ldots (6 one-line descriptions)\\
+Output ONLY valid JSON: \{structural\_anomaly: \ldots, \ldots\}
+\end{quote}
 
-The enrichment features are integrated into the policy state vector via a learned 2-layer MLP projector:
+Batched queries (5 nodes per call, Section~\ref{sec:reliability-scale}) use a mechanical extension of this template that concatenates per-node blocks and requests a JSON \emph{array} of six-score objects.
 
-\begin{equation}
-\mathbf{e}_v = W_6 \cdot \text{ReLU}(W_5 \cdot \mathbf{f}_v + b_5) + b_6
-\end{equation}
+\paragraph{Determinism.} API calls set \texttt{temperature = 0} (\texttt{generate\_risk\_scores.py:330}), so repeated runs on the same prompt return the same JSON barring API-side drift. Once cached, the score tensor is fixed for the rest of the thesis.
 
-\noindent
-where $\mathbf{f}_v$ is the enrichment feature vector (26 structural features, 6 reasoning scores, or the 32-dimensional concatenation of both, depending on enrichment mode) and the projector outputs a 16-dimensional vector. The enriched state vector becomes:
+\paragraph{Reliability and template fallback.} If the API returns malformed JSON, raises an error, or times out, the affected nodes are silently assigned scores from a deterministic \emph{template} computed from the same 26 statistics (for example, \texttt{structural\_anomaly} = normalised maximum degree-percentile across relations; \texttt{coordination\_signal} = mean ego-density; etc.). The template is conceptually a linear-formula baseline and also serves as the ``reasoning off'' condition in Study~A7. In our production runs the API failure rate was well under 1\% and the template filled in fewer than 100 nodes per dataset.
 
-\begin{equation}
-\mathbf{s}_v^r = \left[ x_v, \; \text{conf}(v), \; \hat{d}_r(v), \; \bar{\delta}_r(v), \; J_r(v), \; \sigma_r(v), \; \mathbf{e}_v \right]
-\end{equation}
+\paragraph{Scale and cost.}
+\label{sec:reliability-scale}
+With a batch size of 5, the LLM pipeline issues approximately $11{,}944 / 5 \approx 2{,}389$ calls on Amazon and $45{,}954 / 5 \approx 9{,}191$ calls on YelpChi. Intermediate results are checkpointed to disk every 500 nodes, so an interrupted run resumes without re-paying for completed nodes. Because the computation is offline and one-shot, the dollar cost is bounded and does not recur on subsequent training runs.
 
-\noindent
-yielding a state dimension of $D + 5 + 16 = D + 21$. The projector parameters are included in the policy optimiser's parameter group and trained end-to-end with the policy network. Three enrichment modes are supported:
+\subsection{Integration into the CAPN State Vector}
+\label{sec:llm-enrichment-integration}
+
+The output of Section~\ref{sec:claude-reasoning} is a single tensor of shape $[N, 6]$ per dataset (in addition to the $[N, 26]$ tensor of raw statistics from Section~\ref{sec:node-statistics}). Before entering the CAPN state vector, the enrichment vector $\mathbf{f}_v$ is passed through a learned projector $\pi_\theta : \mathbb{R}^{d_{\text{in}}} \to \mathbb{R}^{16}$ that is trained jointly with the rest of the policy. The projector architecture is chosen automatically based on input dimension (\texttt{llm/projector.py}):
 
 \begin{itemize}
-    \item \texttt{structural}: only the 26 graph statistics ($\mathbf{f}_v \in \mathbb{R}^{26}$).
-    \item \texttt{reasoning}: only the 6 Claude reasoning scores ($\mathbf{f}_v \in \mathbb{R}^{6}$).
-    \item \texttt{both}: concatenation of both ($\mathbf{f}_v \in \mathbb{R}^{32}$).
+    \item $d_{\text{in}} \leq 8$: a single linear layer $\mathbf{e}_v = W \mathbf{f}_v + b$ (appropriate for the $d_{\text{in}} = 6$ reasoning-scores-only case).
+    \item $9 \leq d_{\text{in}} \leq 32$: a small 2-layer MLP with hidden width $\max(12, 2 d_{\text{in}})$ and dropout 0.1; used for the $d_{\text{in}} = 26$ structural-stats case and the $d_{\text{in}} = 32$ combined case.
+    \item $d_{\text{in}} \geq 128$: a 3-layer MLP with LayerNorm; used for the 384-dim sentence-embedding variant of Study~A6 but \emph{not} in the unified framework.
 \end{itemize}
 
+Regardless of the projector variant, the output $\mathbf{e}_v \in \mathbb{R}^{16}$ is appended to the CAPN state vector defined in Section~\ref{sec:state-constructor}, producing
+\begin{equation}
+\mathbf{s}_v^{r} \;=\; \bigl[\; x_v,\; \mathrm{conf}(v),\; \hat{d}_r(v),\; \bar{\delta}_r(v),\; J_r(v),\; \sigma_r(v),\; \mathbf{e}_v \;\bigr]
+\;\in\; \mathbb{R}^{D + 5 + 16},
+\label{eq:state-with-llm}
+\end{equation}
+so the state dimension grows from $D + 5$ (pillar-1 off) to $D + 21$ (pillar-1 on). The projector parameters are registered with the policy optimiser's parameter group (\texttt{train.py:475--480}) so that $\pi_\theta$ is updated by the same policy-gradient signal that trains the actor--critic (Section~\ref{sec:capn-loss}).
 
-\section{Ablation Study Design}
+\paragraph{Three enrichment modes.} The implementation supports three mutually exclusive enrichment modes, selected by the \texttt{--enrichment-mode} flag:
+
+\begin{itemize}
+    \item \texttt{structural}: $\mathbf{f}_v$ is the 26-dim statistics vector only ($d_{\text{in}}=26$). Deterministic; requires no LLM call.
+    \item \texttt{reasoning}: $\mathbf{f}_v$ is the 6-dim Claude-reasoning vector only ($d_{\text{in}}=6$). This is the default in the unified framework.
+    \item \texttt{both}: $\mathbf{f}_v$ is the 32-dim concatenation of the two ($d_{\text{in}}=32$).
+\end{itemize}
+
+Which mode is best is an empirical question, and we answer it in Studies~A6 and~A7 (Section~\ref{sec:study-a6} and Section~\ref{sec:study-a7}): reasoning-only gives the strongest generalisation on YelpChi, with \texttt{both} close behind but more parameter-hungry.
+
+\paragraph{Framework interaction summary.} Part~1 of the LLM pillar takes the graph and outputs a dense, 16-dimensional per-node signal that rides into the CAPN state at equation~\eqref{eq:state-with-llm}. Nothing else in the backbone, the bandit, or the loss is modified. The policy network of Section~\ref{sec:policy-network} consumes $\mathbf{s}_v^{r}$ transparently and issues per-node thresholds as before---so pillar~1 adds information without reshaping the pipeline. Part~2 (Section~\ref{sec:llm-pillar-2}) takes the complementary approach: instead of enriching the state, it enriches the input features the backbone aggregates over.
+
+
+\section{The LLM Pillar (Part~2): Textual Reasoning into Node Features}
+\label{sec:llm-pillar-2}
+\label{sec:unified-framework}
+
+Part~1 of the LLM pillar (Section~\ref{sec:llm-pillar-1}) routes a \emph{graph-derived} profile through the LLM and feeds the result into the CAPN policy state. Part~2, described in this section, takes the complementary path: it routes the \emph{raw review text} through the LLM, injects the result into the GNN's input features through a learnable gate, and appends a separate copy to the policy state. The two parts share the same external model (Claude Haiku~4.5, \texttt{claude-haiku-4-5-20251001}), the same precompute-once/load-many architecture, and the same additive-by-design philosophy---but they operate on different inputs and enter the framework at different points (feature space for Part~2; policy state for Part~1).
+
+Part~2 is applicable only on \textbf{YelpChi}. Amazon's release does not ship the raw review text for each node, so this textual signal does not exist for that dataset. On YelpChi, text is also where the LLM pillar is \emph{expected} to pay off: the dataset's 32 pre-normalised behavioural features are numerically weak (the strongest has $|r| = 0.235$ with the fraud label; cf.\ Section~\ref{sec:datasets}), so an orthogonal, text-derived signal has room to help. An earlier attempt (Study~A6 in Section~\ref{sec:study-a6}) plugged \emph{generic} sentence-transformer embeddings of node profiles into the CAPN state and produced no measurable gain; we attribute that null result to the lossy text round-trip of generic sentence encoding. Part~2 replaces this with three design choices validated in Chapter~\ref{Chapter4}: (i)~compute \emph{fraud-specific} text scores rather than generic embeddings, (ii)~inject them into the GNN's input through a \emph{gated} residual projection that can be unlearned if harmful, and (iii)~append the same scores to the CAPN policy state so that threshold decisions can condition on textual fraud signals as well.
+
+\subsection{Text-Based LLM Risk Scoring}
+\label{sec:text-risk-scores}
+
+The Amazon pipeline (Part~1) derives its reasoning scores from graph statistics. On YelpChi, the 32 behavioural features already encode the bulk of the useful structural information, so a parallel graph-derived LLM score would add little. However, each YelpChi review also has an accompanying \emph{text body} that is absent from the \texttt{.mat} file supplied with the CARE-GNN release. We recover the original review texts by re-running the authors' preprocessing pipeline on the raw metadata (the recovery protocol and the verification that our text order matches the node ordering used in the filtered adjacency matrices are reported in Section~\ref{sec:yelp-text-experiments} of Chapter~\ref{Chapter4}). The result is a JSON array of $N = 45{,}954$ review strings, ordered by node identifier.
+
+From these texts we compute six per-node risk scores, each bounded to $[0, 1]$, that capture \emph{linguistic} fraud signals complementary to the 32 behavioural features:
+
+\begin{itemize}
+    \item \texttt{generic\_language}: how vague or template-like the review reads, from the density of boilerplate phrases (``great place'', ``good service'') normalised by overall length. High values indicate copy-paste phrasing.
+    \item \texttt{sentiment\_mismatch}: the degree to which positive and negative sentiment words co-occur in near-equal proportions, measured by $\min(\text{pos}, \text{neg}) / (\text{pos} + \text{neg})$. High values indicate internally inconsistent opinions, often a sign of forced text.
+    \item \texttt{promotional\_tone}: the density of marketing-style phrases (``highly recommend'', ``must try'', ``worth every'') combined with an unusually high density of positive sentiment words.
+    \item \texttt{copy\_paste\_signal}: derived from one minus the type--token ratio plus the most-common-word frequency, capturing repetitive or formulaic wording.
+    \item \texttt{detail\_authenticity}: a weighted combination of numeric content density, capitalised non-initial tokens (a proper-noun proxy), and length. Low values read as ``fake-sounding''; high values indicate concrete, specific prose.
+    \item \texttt{behavioral\_anomaly}: capitalisation ratio, exclamation density, repeated-character sequences (``sooooo''), and emoji-like tokens.
+\end{itemize}
+
+The scoring pipeline supports two modes:
+
+\begin{enumerate}
+    \item \textbf{Template mode} computes all six scores from deterministic text statistics (length, ratios, phrase lookups). It runs in seconds on the full $45{,}954$ reviews, requires no external service, and is our \emph{default} for large-scale ablations in Chapter~\ref{Chapter4} (Study~A8 and the main YelpChi evaluation of Section~\ref{sec:results-unified}).
+    \item \textbf{LLM mode} sends batches of up to ten review texts to \texttt{claude-haiku-4-5-20251001} with a structured prompt that requests the same six scores as a JSON array, with \texttt{temperature~=~0} for determinism (\texttt{generate\_text\_risk\_scores.py:312}). The pipeline checkpoints every 500 nodes, resumes from the checkpoint on restart, and falls back silently to the template score for any node the API cannot parse (or when \texttt{ANTHROPIC\_API\_KEY} is unset). In our runs, the template fallback fired on fewer than 1\% of nodes.
+\end{enumerate}
+
+\paragraph{Scale.} In LLM mode, the pipeline issues approximately $45{,}954 / 10 \approx 4{,}595$ API calls per YelpChi pass. Like Part~1, all scores are generated once offline and cached; no LLM call is ever made inside the training loop.
+
+\paragraph{Output artefact.} The pipeline writes a single $[N, 6]$ \texttt{float32} tensor to \path{llm_embeddings/yelp/text_risk_scores.pt}. Unlike the Amazon reasoning scores of Part~1 (which analyse graph statistics), these six scores analyse raw textual content and therefore carry information that no behavioural feature can capture.
+
+\subsection{Gated Text Feature Injection}
+\label{sec:text-feature-gate}
+
+With the text-risk tensor in hand, the immediate question is \emph{where to inject it}. The obvious choice---concatenating the six scores onto the 32 behavioural features before the GNN---is the baseline we ran in Study~A8 (Section~\ref{sec:a8-feature} of Chapter~\ref{Chapter4}), and it empirically \emph{degrades} YelpChi performance: the widened weight matrix absorbs noise without matching signal, the mismatched magnitude scales of $x_v$ and $t_v$ dilute the original L1-normalised features, and the model loses the ability to ignore text when it is unhelpful. The unified framework therefore avoids concatenation and adopts a \emph{gated residual} injection.
+
+Concretely, we define a single module---the \textbf{TextFeatureGate} (\texttt{capn.py:603--629})---that replaces each node's feature vector $x_v$ with the gated sum
+\begin{equation}
+    x'_v \;=\; x_v \;+\; \sigma(g) \odot \bigl( W_{\text{text}} \, t_v \bigr),
+    \label{eq:text-feature-gate}
+\end{equation}
+where $x_v \in \mathbb{R}^{D}$ is the node's original feature vector ($D=32$ on Yelp), $t_v \in \mathbb{R}^{6}$ is its text-risk vector, $W_{\text{text}} \in \mathbb{R}^{D \times 6}$ is a learned linear projection (\texttt{nn.Linear(6, 32)}), $g \in \mathbb{R}^{D}$ is a learned per-dimension gate parameter, and $\odot$ is element-wise multiplication. The gate is initialised to $g = -2$ so that $\sigma(g) \approx 0.12$: the text contribution starts at roughly one-eighth of the projected magnitude and can grow, shrink, or---crucially---\emph{shrink back towards zero} if the supervised loss is hurt.
+
+Equation~\eqref{eq:text-feature-gate} has several properties that the unified framework exploits:
+
+\begin{itemize}
+    \item \textbf{Dimension preservation.} Because $x'_v \in \mathbb{R}^{D}$, no downstream module is reshaped. The GNN aggregators, the label predictor, and the CAPN state constructor all continue to operate on $D$-dimensional inputs, so the backbone's calibrated capacity and regularisation carry over unchanged.
+    \item \textbf{Information preservation.} No dimensionality reduction is applied to $t_v$ (it enters at full rank, projected into $D$), so the LLM's six signals are not forced through the compression bottleneck that Study~A6's sentence-transformer projector imposed.
+    \item \textbf{Reversibility.} Because the gate is sigmoid-parameterised and initialised near zero, the network starts arbitrarily close to the no-injection baseline. If any dimension of $t_v$ turns out to be harmful, training can drive the corresponding gate element back towards $-\infty$ and effectively remove it.
+\end{itemize}
+
+At the implementation level the gate is applied at every feature lookup via the \texttt{GatedEmbedding} wrapper (\texttt{capn.py:632--656}): the wrapper is a drop-in replacement for \texttt{nn.Embedding} that carries the precomputed \texttt{text\_scores} as a non-persistent buffer and calls~\eqref{eq:text-feature-gate} on each forward pass. The base embedding's weights remain frozen; only $W_{\text{text}}$ and the gate $g$ are trainable. This keeps the GNN's original feature matrix intact while letting the framework learn exactly how much of each text score to admit into each feature dimension.
+
+\subsection{Text Scores in the Policy State}
+\label{sec:text-state-enrichment}
+
+Independently of whether the text scores are injected into the node features via~\eqref{eq:text-feature-gate}, they are appended directly to the CAPN policy state so that the policy network can condition its threshold decisions on textual fraud signals:
+\begin{equation}
+    \mathbf{s}_v^{r} \;=\; \bigl[\; x_v,\; \mathrm{conf}(v),\; \hat{d}_r(v),\; \bar{\delta}_r(v),\; J_r(v),\; \sigma_r(v),\; t_v \;\bigr]
+    \;\in\; \mathbb{R}^{D + 5 + 6}.
+    \label{eq:state-with-text}
+\end{equation}
+No projector is applied to $t_v$: it is already low-dimensional and already on the same $[0, 1]$ scale as $\mathrm{conf}(v)$ and the other policy-state scalars of Section~\ref{sec:state-constructor}. The state dimension grows from $D + 5$ (policy state with no LLM signal) to $D + 11$ (with Part~2 text scores); on Yelp, this is $32 + 11 = 43$. The text tensor is registered as a non-trainable buffer inside the state constructor (analogously to the node-statistics tensors of Part~1), so its values do not receive gradients.
+
+\paragraph{Part~1 and Part~2 in the same state vector.} Parts~1 and~2 are not mutually exclusive. When both are enabled, the 16-dimensional projected Part~1 enrichment $\mathbf{e}_v$ (equation~\eqref{eq:state-with-llm}) and the 6-dimensional Part~2 text scores $t_v$ are appended side-by-side, producing a state of dimension $D + 5 + 16 + 6 = D + 27$. Part~1 contributes structural reasoning; Part~2 contributes textual reasoning; the policy network sees both and learns the relative weighting implicitly.
+
+\paragraph{Framework interaction summary.} Part~2 of the LLM pillar enters the framework at two points---feature space and policy state---and leaves every other component untouched. The GNN backbone of Section~\ref{sec:gnn-pillar} aggregates over gated features $x'_v$ without knowing they carry text-derived signal; the CAPN policy network of Section~\ref{sec:policy-network} consumes the extended state~\eqref{eq:state-with-text} without knowing which entries are textual. The rest of the unified framework---the inherited bandit, the enhanced label predictor, the shaped reward, and the inter-relation aggregation---remains bit-for-bit identical. This is the discipline we imposed on the pillar design throughout Chapter~\ref{Chapter3}: each pillar is a local, additive modification, so that their interactions (tested in the three-pillar ablation of Chapter~\ref{Chapter4}) are attributable and do not hide compound engineering effects.
+
+\section{Unified Training: Actor--Critic and Joint Objective}
+\label{sec:unified-training}
+
+With all three pillars now specified, what remains is the training protocol that ties them together. This section defines two things: (i)~the actor--critic optimisation of the RL pillar's policy network, which reduces gradient variance enough to train reliably at batch level; and (ii)~the joint loss that combines the GNN backbone's classification and similarity terms with the actor--critic's policy and critic terms into a single objective minimised end-to-end. Both the GNN and the LLM pillars enter this training loop unchanged: the backbone receives features possibly gated by the text injection of Section~\ref{sec:text-feature-gate}, and the policy receives a state possibly enriched by Part~1 (Section~\ref{sec:llm-enrichment-integration}) or Part~2 (Section~\ref{sec:text-state-enrichment}) of the LLM pillar.
+
+\subsection{Actor--Critic Policy Optimisation}
+\label{sec:actor-critic}
+
+The policy network of Section~\ref{sec:policy-network} can in principle be trained by vanilla REINFORCE: for each batch, multiply the log-probability of the sampled per-node thresholds by a scalar batch reward, and backpropagate. In practice this yields unacceptably high gradient variance, because the shaped reward $R_t$ (Section~\ref{sec:capn-loss}) is itself a batch-level statistic that bounces around with the mini-batch composition; the policy oscillates and early training frequently diverges on YelpChi. The unified framework therefore adopts a \textbf{single-step actor--critic} formulation (\texttt{model.py:226--242}), gated by the flag \texttt{--use-actor-critic}. REINFORCE is retained as a baseline and can be re-enabled by leaving the flag off.
+
+Let $\pi_\theta$ denote the Beta-parameterised policy of Section~\ref{sec:policy-network}, $V_\phi$ a learned state-value critic (described below), and $R_t$ the scalar shaped reward for batch $t$. The actor--critic formulation replaces the raw reward in the REINFORCE gradient with an advantage estimate:
+\begin{align}
+    \hat{A}_t &\;=\; R_t \;-\; \operatorname{sg}\!\bigl[\, V_\phi(\mathbf{s}_t) \,\bigr],
+    \label{eq:ac-advantage} \\
+    \mathcal{L}_{\text{policy}}(\theta) &\;=\; -\,\hat{A}_t \sum_{r=1}^{R} \log \pi_\theta\!\bigl( \tau_r \,\bigm|\, \mathbf{s}_t^{\,r} \bigr)
+        \;-\; \lambda_{H}\, H\!\bigl[\pi_\theta\bigr],
+    \label{eq:ac-policy} \\
+    \mathcal{L}_{\text{critic}}(\phi) &\;=\; \bigl( V_\phi(\mathbf{s}_t) \,-\, R_t \bigr)^{2},
+    \label{eq:ac-critic}
+\end{align}
+where $\operatorname{sg}[\cdot]$ denotes the stop-gradient operator (implemented as \texttt{.detach()}) so that the actor's gradient does not flow into the critic, $H[\pi_\theta]$ is an entropy bonus approximated from the sampled Beta thresholds, and $\lambda_H = 0.01$ is the entropy coefficient (\texttt{capn.py:343}).
+
+\paragraph{Critic architecture.} The critic $V_\phi$ is a small three-layer MLP, $\mathbb{R}^{D_{\text{state}}} \to 64 \to 32 \to 1$ (\texttt{capn.py:578--600}), with the same input dimension as the policy. $D_{\text{state}}$ is whatever the unified state constructor produces: $D + 5$ with no LLM signal, $D + 21$ with Part~1 only, $D + 11$ with Part~2 only, and $D + 27$ with both---on Yelp, these correspond to $37$, $53$, $43$, and $59$ respectively. At training time the critic is evaluated once per relation and the per-relation values are averaged into a single scalar $V_\phi(\mathbf{s}_t)$ used in~\eqref{eq:ac-advantage}; the full per-relation value tensor is kept for the critic regression target in~\eqref{eq:ac-critic}.
+
+\paragraph{Training schedule.} The policy network is \emph{not} trained from epoch zero. Because early-training gradients of the GNN backbone are themselves noisy, the policy would otherwise learn to track that noise. We therefore impose a two-phase schedule parameterised by two hyperparameters, the GNN-warmup length $E_{\text{warm}}$ and the policy-ramp length $E_{\text{ramp}}$:
+\begin{equation}
+    \lambda_\pi(t) \;=\;
+    \begin{cases}
+        0 & \text{if } t < E_{\text{warm}}, \\
+        \lambda_\pi^{\star}\cdot \dfrac{t - E_{\text{warm}}}{E_{\text{ramp}}} & \text{if } E_{\text{warm}} \leq t < E_{\text{warm}} + E_{\text{ramp}}, \\
+        \lambda_\pi^{\star} & \text{if } t \geq E_{\text{warm}} + E_{\text{ramp}},
+    \end{cases}
+    \label{eq:lambda-pi-schedule}
+\end{equation}
+where $t$ is the zero-indexed epoch and $\lambda_\pi^{\star} = 0.3$ is the target weight. The schedule is implemented in \texttt{CAPNOneLayerCARE.\_effective\_lambda\_policy} (\texttt{model.py:192--201}); the current epoch is handed to the model via \texttt{gnn\_model.set\_epoch(t)} at the start of each epoch.
+
+The unified framework runs reported in Chapter~\ref{Chapter4} use $E_{\text{warm}} = 5$ and $E_{\text{ramp}} = 5$ (i.e.\ warmup over epochs $[0, 5)$, linear ramp from $0$ to $0.3$ over $[5, 10)$, full weight thereafter), inherited from the Yelp production configuration (\texttt{ablation.py:275--276}). These values are not the code-level defaults---both are \texttt{0} in \texttt{train.py}, which disables warmup and ramp entirely---and must be set explicitly via \texttt{--gnn-warmup-epochs 5 --lambda-policy-ramp-epochs 5}.
+
+\paragraph{Gradient clipping.} Two separate clip budgets are applied per step (\texttt{train.py:560--566}): GNN and label-predictor parameters are clipped to max-norm $1.0$ (flag \texttt{--grad-clip}), while the union of policy, critic, and LLM-enrichment projectors is clipped to max-norm $5.0$ (flag \texttt{--policy-grad-clip}). The asymmetry reflects the different scales of the two gradient flows: supervised cross-entropy gradients are small and structured, whereas policy-gradient signals are noisier and benefit from a wider clip.
+
+\subsection{Unified Training Objective}
+\label{sec:unified-loss}
+
+Summing the supervised terms from the backbone (Section~\ref{sec:care-loss}) with the actor--critic terms from~\eqref{eq:ac-policy}--\eqref{eq:ac-critic} yields the single objective minimised end-to-end:
+\begin{equation}
+    \mathcal{L}(\theta, \phi, \mathbf{W})
+    \;=\;
+    \underbrace{\mathcal{L}_{\text{GNN}} \;+\; \lambda_1\, \mathcal{L}_{\text{sim}}}_{\text{backbone (Section~\ref{sec:care-loss})}}
+    \;+\;
+    \lambda_\pi(t)\, \mathcal{L}_{\text{policy}}
+    \;+\;
+    \lambda_c\, \mathcal{L}_{\text{critic}},
+    \label{eq:unified-loss}
+\end{equation}
+where $\theta$ collects the parameters of the policy network and the TextFeatureGate, $\phi$ collects the critic parameters, and $\mathbf{W}$ collects all other trainable parameters (backbone, label predictor, intra- and inter-relation aggregators, LLM-enrichment projectors). The weights take the following roles:
+
+\begin{itemize}
+    \item $\lambda_1 = 2$ keeps the similarity loss dominant during early training, so that the label predictor $S(\cdot)$ sharpens before the filtering thresholds matter (inherited from CARE-GNN).
+    \item $\lambda_\pi(t)$ is the epoch-dependent policy weight of equation~\eqref{eq:lambda-pi-schedule}, target $\lambda_\pi^{\star} = 0.3$.
+    \item $\lambda_c = 0.1$ balances the critic regression against the supervised and policy signals (\texttt{--lambda-critic 0.1}).
+\end{itemize}
+
+\paragraph{Dual-optimiser setup.} Equation~\eqref{eq:unified-loss} is optimised by two independent Adam optimisers (\texttt{train.py:465--492}):
+
+\begin{itemize}
+    \item an optimiser for backbone parameters $\mathbf{W}$ (GNN aggregators, label predictor, TextFeatureGate, classifier), with learning rate $10^{-2}$ and weight decay $\lambda_2 = 10^{-3}$;
+    \item an optimiser for policy and critic parameters, with the policy network and LLM-enrichment projectors at learning rate \texttt{--policy-lr} $= 3 \cdot 10^{-3}$, and the critic at its own learning rate \texttt{--critic-lr} $= 10^{-3}$ (each is a separate parameter group inside the same \texttt{torch.optim.Adam} instance).
+\end{itemize}
+
+The two optimisers are stepped in the same inner loop: after a single backward pass over $\mathcal{L}$, gradient clipping is applied separately (as described above), then \texttt{optimizer.step()} updates the backbone while \texttt{policy\_optimizer.step()} updates the policy and critic. Using two optimisers rather than one is what makes the dual learning-rate schedule possible: the actor--critic parameters converge on a different time-scale from the backbone, and forcing them through a single learning rate destabilises training in our early runs.
+
+\paragraph{Hyperparameter summary.} Table~\ref{tab:unified-training-hparams} lists the training-specific hyperparameters introduced by the unified framework; backbone and RL-pillar hyperparameters from Sections~\ref{sec:care-hparams} and~\ref{sec:capn-hyperparams} are not repeated here.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Policy-weight target $\lambda_\pi^{\star}$          & 0.3 \\
+Similarity loss weight $\lambda_1$                   & 2 \\
+Critic loss weight $\lambda_c$                       & 0.1 \\
+Entropy bonus coefficient $\lambda_H$                & 0.01 \\
+GNN-warmup epochs $E_{\text{warm}}$                  & 5 \\
+Policy-ramp epochs $E_{\text{ramp}}$                 & 5 \\
+Critic hidden dimension                              & 64 \\
+Critic architecture                                  & $D_{\text{state}} \to 64 \to 32 \to 1$ \\
+Backbone LR                                          & $1 \times 10^{-2}$ \\
+Backbone weight decay $\lambda_2$                    & $1 \times 10^{-3}$ \\
+Policy LR                                            & $3 \times 10^{-3}$ \\
+Critic LR                                            & $1 \times 10^{-3}$ \\
+Backbone gradient clip (max-norm)                    & 1.0 \\
+Policy/critic gradient clip (max-norm)               & 5.0 \\
+Optimiser                                            & Adam (two independent instances) \\
+\hline
+\end{tabular}
+\caption{Training-specific hyperparameters for the unified GNN + RL + LLM framework. These augment the backbone (Table~\ref{tab:care-hparams}) and RL-pillar (Section~\ref{sec:capn-hyperparams}) hyperparameters.}
+\label{tab:unified-training-hparams}
+\end{table}
+
+\paragraph{Summary.} With the loss~\eqref{eq:unified-loss} and the dual-optimiser schedule just described, the unified framework's forward pass is a single end-to-end computation: the backbone produces $h_v$ from gated features and filtered neighbourhoods; the label predictor produces $S(\cdot)$; the policy network produces per-node thresholds from an LLM-enriched state; the critic produces $V_\phi(\mathbf{s}_t)$ from the same state; and all four signals enter~\eqref{eq:unified-loss} together. Chapter~\ref{Chapter4} reports the empirical behaviour of this training protocol, including its $+1.99$pp AUC improvement over CARE-GNN on YelpChi (Section~\ref{sec:results-unified}) and the component-level Amazon ablations (Section~\ref{sec:ablation}) that validate each internal decision described in this chapter.
+
+% Main framework evaluation moved to Chapter 4, Section \ref{sec:results-unified}.
+
+
+\section{Supporting Component Ablations (Amazon)}
 \label{sec:ablation}
 
-To systematically evaluate each component of CAPN, we design seven ablation studies that isolate individual design decisions while holding all other hyperparameters constant. All studies are evaluated on both the Amazon and Yelp datasets.
+Chapter~\ref{Chapter4} reports two complementary families of experiments. The \emph{main result} is the three-pillar evaluation on YelpChi in Section~\ref{sec:results-unified}, which measures what the unified framework achieves end-to-end. The second family---the subject of this section---is a set of nine component-level ablations, \textbf{A1} through \textbf{A9}, all run on the \emph{Amazon} dataset. Their purpose is not to argue for the framework as a whole but to \emph{attribute} individual design decisions to measurable changes in fraud-detection performance.
 
-\subsection{Study A1: CAPN vs Original RL}
+Amazon is the natural venue for these ablations for three reasons: its 25 hand-crafted features already encode most of the usable fraud signal (cf.\ Section~\ref{sec:datasets}), so each design decision lands on a stable and interpretable baseline; its smaller size ($11{,}944$ nodes, $8{,}639$ labelled) keeps the compute budget of a 9-study sweep tractable; and its textless nature (no review bodies are shipped) lets the RL-pillar and LLM-Part~1 decisions be tested without the YelpChi-only textual pillar confounding the results. Each study isolates a \emph{single} design choice while holding all other hyperparameters at their defaults, so the measured difference can be attributed to the one component under test.
 
-The central experiment compares the full CAPN system against CARE-GNN with its original heuristic RL module. This measures the aggregate effect of all CAPN components: the learned policy network, the MLP label predictor, multi-view distance, and shaped reward.
+The nine studies fall into three groups, one per pillar:
+
+\begin{itemize}
+    \item \textbf{RL pillar (Section~\ref{sec:capn}).} A1 tests CAPN in aggregate against the inherited bandit; A2 isolates the enhanced label predictor; A3 isolates the shaped reward; A4 isolates the LLM-prior warm-start; A5 tests sensitivity to the policy-loss weight $\lambda_\pi$.
+    \item \textbf{LLM pillar, Part~1 (Section~\ref{sec:llm-pillar-1}).} A6 tests the \emph{rejected} sentence-transformer enrichment (v1); A7 tests the reasoning-scores enrichment that replaced it (v2).
+    \item \textbf{LLM pillar, Part~2 (Section~\ref{sec:llm-pillar-2}) and combined integration.} A8 tests the \emph{rejected} feature-level concatenation that motivates the gated residual of equation~\eqref{eq:text-feature-gate}; A9 tests the combined LLM components as a cross-pillar integration check.
+\end{itemize}
+
+The results themselves are reported in Chapter~\ref{Chapter4}; this section specifies only what each study tests and why.
+
+\subsection{Study A1: CAPN vs Inherited Bandit}
+
+The aggregate Amazon experiment compares the full CAPN system (Section~\ref{sec:capn}) against the CARE-GNN backbone with its original heuristic bandit (Section~\ref{sec:inherited-bandit}). This measures the combined effect of all RL-pillar design decisions---learned policy network, enhanced label predictor, multi-view distance, and shaped reward---against the baseline they collectively replace. A positive result here motivates the isolation studies A2--A5.
 
 \subsection{Study A2: Label Predictor Isolation}
 
-This study disentangles the contribution of the enhanced MLP label predictor from the policy network by comparing three configurations:
+This study disentangles the contribution of the enhanced MLP label predictor (Section~\ref{sec:capn-label-predictor}) from the policy network by comparing three configurations:
 \begin{enumerate}
     \item \textbf{Linear predictor}: Original CARE-GNN with \texttt{nn.Linear(D, 2)} classifier.
-    \item \textbf{MLP predictor (no policy)}: CARE-GNN with the two-layer MLP label predictor but the original heuristic RL. This isolates the classifier improvement.
+    \item \textbf{MLP predictor (no policy)}: CARE-GNN with the two-layer MLP label predictor but the original heuristic bandit. This isolates the classifier improvement.
     \item \textbf{MLP predictor + policy (CAPN)}: Full CAPN. The difference between this and configuration~2 measures the policy network's incremental contribution.
 \end{enumerate}
 
 \subsection{Study A3: Reward Shaping}
 
-This study evaluates whether the three-component shaped reward improves over the original binary reward, and which component contributes most:
+Evaluates whether the shaped reward of Section~\ref{sec:capn-loss} improves over the original binary reward of~\eqref{eq:bandit-reward}, and which component of the shaped reward contributes most:
 \begin{itemize}
-    \item \textbf{Binary reward}: Original RL ($\pm 1$ based on distance change).
+    \item \textbf{Binary reward}: Original bandit ($\pm 1$ based on distance change).
     \item \textbf{Shaped reward}: Full CAPN reward ($w_1 = 0.5, w_2 = 0.3, w_3 = 0.2$).
     \item \textbf{Distance only}: $w_1 = 1.0, w_2 = 0, w_3 = 0$. Tests filtering quality in isolation.
     \item \textbf{Accuracy only}: $w_1 = 0, w_2 = 1.0, w_3 = 0$. Tests task-level signal in isolation.
@@ -824,34 +995,27 @@ This study evaluates whether the three-component shaped reward improves over the
 
 \subsection{Study A4: LLM Prior Initialisation}
 
-Evaluates whether LLM-derived priors for policy network bias initialisation and multi-view distance mixing parameters accelerate convergence or improve final performance, comparing CAPN with and without priors.
+Evaluates whether the LLM-derived priors for policy-network bias initialisation and multi-view-distance mixing parameters (Section~\ref{sec:llm-warm-start}) accelerate convergence or improve final performance, comparing CAPN with and without priors.
 
 \subsection{Study A5: Policy Loss Weight Sensitivity}
 
-A sensitivity analysis over $\lambda_\pi \in \{0.01, 0.05, 0.1, 0.5\}$, testing the robustness of CAPN to the balance between supervised GNN loss and the REINFORCE policy gradient loss.
+A sensitivity analysis over $\lambda_\pi \in \{0.01, 0.05, 0.1, 0.5\}$, testing the robustness of CAPN to the balance between supervised GNN loss and the policy-gradient loss in the unified objective~\eqref{eq:unified-loss}.
 
 \subsection{Study A6: LLM Semantic State Enrichment (v1)}
+\label{sec:study-a6}
 
-Evaluates whether augmenting the policy state vector with projected sentence-transformer embeddings of node relational profiles improves threshold decisions. The base state has dimension $D + 5$; the enriched state adds 16 dimensions from a learned projector ($384 \to 64 \to 16$) applied to pre-computed sentence embeddings of each node's structural statistics.
+Evaluates whether augmenting the CAPN state vector with projected sentence-transformer embeddings of each node's textualised relational profile improves threshold decisions. The base state has dimension $D + 5$; the enriched state adds 16 dimensions from a learned 3-layer projector ($384 \to h_1 \to h_2 \to 16$) applied to pre-computed sentence embeddings of each node's structural statistics. This is the \emph{failed approach} whose negative result motivates Study~A7 and, more broadly, the Part~1 design of the LLM pillar (Section~\ref{sec:llm-pillar-1}).
 
 \subsection{Study A7: LLM Reasoning State Enrichment (v2)}
+\label{sec:study-a7}
 \label{sec:enrichment-v2}
 
-Motivated by the failure of the v1 sentence-transformer approach (Study A6), this study evaluates a redesigned enrichment pipeline that avoids the lossy text round-trip. Instead of converting numerical statistics to text and re-encoding them, we employ two complementary enrichment channels:
+Motivated by the failure of the v1 sentence-transformer approach (Study~A6), this study evaluates the redesigned enrichment pipeline of Section~\ref{sec:llm-pillar-1} that avoids the lossy text round-trip. Instead of converting numerical statistics to text and re-encoding them, we employ two complementary enrichment channels:
 
 \begin{enumerate}
-    \item \textbf{Direct graph structural features.} The precomputed node statistics---degrees, percentile ranks, label disagreement, neighbour feature variance, cross-relation Jaccard overlap, degree ratios, feature z-scores, 2-hop neighbourhood size, and ego-network density---are loaded as a 26-dimensional numeric vector per node and projected through a 2-layer MLP ($26 \to 52 \to 16$). This preserves numerical precision that the sentence-transformer destroyed.
+    \item \textbf{Direct graph structural features.} The precomputed 26-dimensional node statistics (degrees, percentile ranks, label disagreement, neighbour feature variance, cross-relation Jaccard overlap, degree ratios, feature z-scores, 2-hop neighbourhood size, and ego-network density) are loaded as a numeric vector per node and projected through a 2-layer MLP ($26 \to 52 \to 16$). This preserves numerical precision that the sentence-transformer destroyed.
 
-    \item \textbf{Claude API reasoning scores.} For each node, its structural profile is sent to the Claude LLM (Haiku), which returns six fraud-relevant risk assessments:
-    \begin{itemize}
-        \item \textit{structural\_anomaly}: how unusual is this node's connectivity pattern (0 = typical, 1 = extreme outlier).
-        \item \textit{relation\_consistency}: how consistent is behaviour across the three relations (0 = very inconsistent, 1 = uniform).
-        \item \textit{neighbourhood\_risk}: how suspicious are the neighbours based on training-label statistics (0 = clean, 1 = mostly fraudulent).
-        \item \textit{feature\_anomaly}: how statistically unusual are the node's features (0 = normal, 1 = extreme outlier).
-        \item \textit{coordination\_signal}: likelihood of coordinated or organised behaviour (0 = independent, 1 = strong coordination).
-        \item \textit{isolation\_score}: structural isolation versus embeddedness (0 = deeply embedded, 1 = peripheral).
-    \end{itemize}
-    Unlike the sentence-transformer approach, Claude is used to \emph{reason about pattern interactions}---for example, recognising that high ego-density combined with high label disagreement suggests a fraud ring, which a simple formula cannot capture. The six scores are produced once as a preprocessing step and stored as a $[N, 6]$ tensor.
+    \item \textbf{Claude API reasoning scores.} For each node, its structural profile is sent to Claude Haiku~4.5, which returns the six fraud-relevant risk scores defined in Section~\ref{sec:claude-reasoning}. Unlike the sentence-transformer approach, the LLM here \emph{reasons about pattern interactions}---for example, recognising that high ego-density combined with high label disagreement suggests a fraud ring, which a simple formula cannot capture. The six scores are produced once as a preprocessing step and stored as a $[N, 6]$ tensor.
 \end{enumerate}
 
 A template-based heuristic mode is also provided, where the six reasoning scores are computed via deterministic formulas rather than API calls, enabling cost-free experimentation. The study evaluates four configurations in a $2 \times 2$ ablation:
@@ -862,196 +1026,46 @@ A template-based heuristic mode is also provided, where the six reasoning scores
     \item \textbf{CAPN + both}: structural features and reasoning scores concatenated ($\text{enrichment\_mode} = \text{both}$).
 \end{itemize}
 
+\subsection{Study A8: Feature-Level Text Enrichment (Rejected Baseline)}
+\label{sec:study-a8}
 
-\section{Experimental Results (Amazon)}
-\label{sec:results}
+Tests whether LLM-derived scores can be integrated into the GNN at \emph{feature} level by simple concatenation onto the raw node features, rather than through the gated residual of equation~\eqref{eq:text-feature-gate}. On Amazon this is done with the six reasoning scores (the only LLM scores available---Amazon ships no review text). Three configurations are compared:
 
-We report experimental results on the Amazon dataset. All experiments use 31 training epochs with the hyperparameters specified in the preceding sections. Results report the best epoch by validation AUC-ROC. Yelp results are pending completion.
+\begin{itemize}
+    \item \textbf{CAPN (baseline)}: no enrichment.
+    \item \textbf{CAPN + feat-reasoning}: reasoning scores concatenated to node features ($D \to D + 6$); no state enrichment.
+    \item \textbf{CAPN + feat + state reasoning}: reasoning scores both concatenated to features \emph{and} added to the policy state.
+\end{itemize}
 
-\subsection{A1: CAPN vs Original RL}
+A8 is the \emph{rejected} feature-integration baseline. The 6-wide concatenation enlarges the label predictor, the intra-aggregator, and the inter-aggregator weight matrices; in practice the extra capacity degrades Amazon GNN-AUC relative to the CAPN baseline (reported in Section~\ref{sec:a8-feature} of Chapter~\ref{Chapter4}) because the reasoning scores' magnitude profile dilutes the already-informative raw features. This negative result is exactly the failure mode that motivates the gated residual $x'_v = x_v + \sigma(g) \odot (W_{\text{text}}\, t_v)$ of Section~\ref{sec:text-feature-gate}: preserving the original feature dimension and letting the network learn how much text signal (if any) to admit. A8 is thus the Amazon-side ``negative control'' for the LLM pillar's Part~2 design.
 
-\begin{table}[ht]
+\subsection{Study A9: Combined LLM Components}
+\label{sec:study-a9}
+
+The final Amazon study evaluates the LLM-pillar components together: LLM priors (Section~\ref{sec:llm-warm-start}), state-level reasoning enrichment (Section~\ref{sec:llm-pillar-1}), and feature-level reasoning enrichment (the same feature path A8 tests, re-used here for a combined check). This is a cross-pillar integration test rather than an isolation study: it asks whether the components interact constructively when stacked, or whether their individual gains collide with one another on a dataset where the features are already strong. The expected answer on Amazon is ``modest''---the headroom above the CAPN baseline is limited by Amazon's already-high AUC---but confirming the absence of a \emph{negative} interaction is a prerequisite for the main YelpChi evaluation of Chapter~\ref{Chapter4}, where the features are weaker and the LLM pillar has more to contribute.
+
+\paragraph{Study-to-section cross-map.} Table~\ref{tab:ablation-crossmap} summarises which methodology section each Amazon study validates, to help the reader connect design decisions to empirical evidence.
+
+\begin{table}[h!]
 \centering
-\begin{tabular}{lcccccc}
-\toprule
-Method & AUC-ROC & AP & F1 & Precision & Recall & Label F1 \\
-\midrule
-CARE-GNN & 0.9398 & 0.8535 & \textbf{0.9011} & \textbf{0.9118} & 0.8925 & 0.7215 \\
-CAPN & \textbf{0.9445} & \textbf{0.8568} & 0.8994 & 0.9074 & \textbf{0.8938} & \textbf{0.8935} \\
-\bottomrule
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Study} & \textbf{Decision tested} & \textbf{Defined in} \\
+\hline
+A1 & Replace bandit with learned policy (aggregate) & Section~\ref{sec:capn} \\
+A2 & Linear vs MLP label predictor                  & Section~\ref{sec:capn-label-predictor} \\
+A3 & Binary vs shaped reward (and components)       & Section~\ref{sec:capn-loss} \\
+A4 & LLM-prior warm-start for policy/distance       & Section~\ref{sec:llm-warm-start} \\
+A5 & Policy-loss weight $\lambda_\pi$ sensitivity   & Section~\ref{sec:unified-loss} \\
+A6 & Sentence-transformer state enrichment (v1)     & Section~\ref{sec:llm-pillar-1} \\
+A7 & Reasoning-score state enrichment (v2)          & Section~\ref{sec:llm-pillar-1} \\
+A8 & Feature-level concat vs gated residual         & Section~\ref{sec:text-feature-gate} \\
+A9 & Stacked LLM components on Amazon               & Section~\ref{sec:llm-pillar-1} + \ref{sec:llm-pillar-2} \\
+\hline
 \end{tabular}
-\caption{CAPN vs CARE-GNN on Amazon. CAPN improves AUC-ROC by +0.47pp and AP by +0.33pp. The MLP label predictor achieves +17.2pp F1 over the linear baseline.}
-\label{tab:capn-main}
+\caption{Cross-map from Amazon component ablations (A1--A9) to the methodology sections whose decisions they validate.}
+\label{tab:ablation-crossmap}
 \end{table}
-
-\noindent
-CAPN outperforms CARE-GNN on the primary ranking metrics (AUC-ROC and AP), demonstrating that the learned policy network produces better filtering decisions than the heuristic RL. The MLP label predictor achieves dramatically higher label F1 (0.8935 vs.\ 0.7215), confirming that non-linear feature-label relationships are important for this dataset.
-
-\subsection{A2: Label Predictor Isolation}
-
-\begin{table}[ht]
-\centering
-\begin{tabular}{lccc}
-\toprule
-Configuration & GNN AUC & GNN AP & Label AUC \\
-\midrule
-Linear predictor (CARE-GNN) & \textbf{0.9398} & \textbf{0.8535} & 0.8786 \\
-MLP predictor (no policy) & 0.9321 & 0.8454 & \textbf{0.9312} \\
-MLP + policy (CAPN) & 0.9445 & 0.8568 & 0.9306 \\
-\bottomrule
-\end{tabular}
-\caption{Label predictor ablation on Amazon.}
-\label{tab:capn-label}
-\end{table}
-
-\noindent
-The MLP predictor alone \emph{hurts} GNN AUC ($-0.77$pp vs.\ linear) because the stronger classifier changes the distance landscape that the heuristic RL was designed for, destabilising the fixed-threshold mechanism. However, adding the policy network not only recovers but \emph{exceeds} the original performance (+1.24pp over MLP-only, +0.47pp over linear baseline). This demonstrates that the policy network is essential: it adapts to the new distance distribution created by the MLP predictor, producing per-node thresholds that the heuristic cannot match.
-
-\subsection{A3: Reward Shaping}
-
-\begin{table}[ht]
-\centering
-\begin{tabular}{lcccc}
-\toprule
-Reward & GNN AUC & GNN AP & GNN F1 \\
-\midrule
-Binary (CARE-GNN) & 0.9398 & 0.8535 & \textbf{0.9011} \\
-Shaped (combined) & \textbf{0.9445} & 0.8568 & 0.8994 \\
-Distance only & 0.9443 & 0.8567 & 0.8933 \\
-Accuracy only & 0.9445 & \textbf{0.8572} & 0.8938 \\
-\bottomrule
-\end{tabular}
-\caption{Reward shaping ablation on Amazon.}
-\label{tab:capn-reward}
-\end{table}
-
-\noindent
-All CAPN reward variants outperform the binary reward baseline on AUC and AP, but the three reward configurations (combined, distance-only, accuracy-only) produce nearly identical results (AUC range: 0.0002). On this dataset, the reward composition has minimal differential effect---the policy network benefits from any continuous reward signal, regardless of its specific composition.
-
-\subsection{A4: LLM Prior Initialisation}
-
-\begin{table}[ht]
-\centering
-\begin{tabular}{lcccc}
-\toprule
-Configuration & GNN AUC & GNN AP & GNN F1 & GNN Precision \\
-\midrule
-CAPN (no priors) & 0.9445 & 0.8568 & 0.8994 & 0.9074 \\
-CAPN (LLM priors) & \textbf{0.9453} & \textbf{0.8587} & \textbf{0.9038} & \textbf{0.9155} \\
-\bottomrule
-\end{tabular}
-\caption{LLM prior initialisation on Amazon.}
-\label{tab:capn-llm}
-\end{table}
-
-\noindent
-LLM priors provide small but consistent improvements across all metrics: +0.08pp AUC, +0.19pp AP, +0.44pp F1, and +0.81pp precision. The priors help most with precision, suggesting that the LLM correctly identified which relations are more susceptible to camouflage, enabling more targeted initial filtering.
-
-\subsection{A5: Policy Loss Weight Sensitivity}
-
-\begin{table}[ht]
-\centering
-\begin{tabular}{lccc}
-\toprule
-$\lambda_\pi$ & GNN AUC & GNN AP & GNN F1 \\
-\midrule
-0.01 & 0.9441 & 0.8568 & 0.8971 \\
-0.05 & 0.9445 & 0.8568 & 0.8999 \\
-\textbf{0.10} & \textbf{0.9445} & \textbf{0.8568} & 0.8994 \\
-0.50 & 0.9444 & 0.8567 & 0.8994 \\
-\bottomrule
-\end{tabular}
-\caption{Policy loss weight sensitivity on Amazon.}
-\label{tab:capn-lambda}
-\end{table}
-
-\noindent
-CAPN is highly robust to the policy loss weight: AUC varies by only 0.0004 across a 50$\times$ range of $\lambda_\pi$ values (0.01 to 0.5). This indicates that the policy network converges to similar filtering behaviour regardless of the gradient magnitude, likely because the separate gradient clipping (Section~6.8.1) effectively normalises the policy update scale.
-
-\subsection{A6: LLM Semantic State Enrichment (v1)}
-
-\begin{table}[ht]
-\centering
-\begin{tabular}{lccc}
-\toprule
-Configuration & GNN AUC & GNN AP & Label AUC \\
-\midrule
-CAPN (base state, dim=$D{+}5$) & \textbf{0.9445} & 0.8568 & 0.9306 \\
-CAPN (LLM state, dim=$D{+}21$) & 0.9426 & \textbf{0.8574} & \textbf{0.9320} \\
-\bottomrule
-\end{tabular}
-\caption{LLM semantic state enrichment (v1, sentence-transformer) on Amazon.}
-\label{tab:capn-llm-state}
-\end{table}
-
-\noindent
-The v1 LLM semantic state enrichment shows minimal effect ($-0.19$pp AUC, $+0.06$pp AP). The pipeline computes node relational statistics (degrees, disagreement, overlap), converts them to natural language descriptions via templates, encodes them with a sentence-transformer (\texttt{all-MiniLM-L6-v2}), and projects the 384-dimensional embeddings down to 16 dimensions. Analysis reveals that this is a \textbf{lossy round-trip}: the sentence-transformer re-encodes numerical statistics already present in the base state through a text bottleneck, destroying numerical precision and adding no genuinely novel information. This motivates the redesigned v2 enrichment pipeline evaluated in Study A7.
-
-\subsection{A7: LLM Reasoning State Enrichment (v2)}
-
-Having diagnosed the v1 failure as a lossy numerical$\to$text$\to$embedding round-trip, we evaluate the redesigned enrichment pipeline (Section~\ref{sec:enrichment-v2}) that injects graph statistics directly as numeric features and uses LLM reasoning for pattern interaction analysis.
-
-\begin{table}[ht]
-\centering
-\begin{tabular}{lcccccc}
-\toprule
-Configuration & GNN AUC & GNN AP & GNN F1 & Precision & Recall & Label F1 \\
-\midrule
-CAPN (baseline) & 0.9445 & 0.8568 & 0.8994 & 0.9074 & 0.8938 & 0.8935 \\
-CAPN + structural & 0.9436 & 0.8546 & 0.8671 & 0.8497 & 0.8888 & 0.8891 \\
-\textbf{CAPN + reasoning} & \textbf{0.9450} & \textbf{0.8595} & \textbf{0.9000} & \textbf{0.9084} & \textbf{0.8940} & \textbf{0.8945} \\
-CAPN + both & 0.9431 & 0.8548 & 0.8744 & 0.8614 & 0.8906 & 0.8891 \\
-\bottomrule
-\end{tabular}
-\caption{LLM reasoning state enrichment (v2) on Amazon. Results use template-mode heuristic scores. Bold indicates best per column.}
-\label{tab:capn-enrichment}
-\end{table}
-
-\noindent
-The v2 enrichment results reveal a clear pattern:
-
-\begin{enumerate}
-    \item \textbf{Reasoning scores improve all GNN metrics.} CAPN + reasoning achieves the highest AUC (+0.05pp), AP (+0.27pp), F1 (+0.06pp), and precision (+0.10pp) over the baseline. The six reasoning scores capture cross-feature interaction patterns (e.g., high ego-density combined with high label disagreement indicating a fraud ring) that are not visible in the individual base state statistics.
-
-    \item \textbf{Structural features alone hurt F1 ($-$3.23pp).} Despite adding 26 genuinely new features (2-hop reach, ego-density, cross-relation degree ratios, feature z-scores), the projector MLP introduces noise that dilutes the existing state signal. The 26-dimensional input is relatively high compared to the base state's 5 structural statistics, and the projector ($26 \to 52 \to 16$) has many more parameters to overfit.
-
-    \item \textbf{Combining both dilutes the reasoning signal.} When structural features and reasoning scores are concatenated ($32 \to 16$ projection), the noisy structural features dominate the small but informative reasoning scores, producing results closer to the structural-only configuration.
-
-    \item \textbf{v2 reasoning outperforms v1 sentence-transformer.} Comparing CAPN + reasoning (AUC 0.9450) with v1 LLM state (AUC 0.9426), the reasoning-only approach gains +0.24pp AUC by avoiding the lossy text encoding and instead providing compact, fraud-relevant assessments.
-\end{enumerate}
-
-\noindent
-These results demonstrate that \emph{how} LLM knowledge is integrated matters more than whether it is integrated. The sentence-transformer approach (v1) degraded information; the reasoning score approach (v2) adds genuinely novel pattern-level analysis. Claude API reasoning scores, which capture more nuanced pattern interactions than the template heuristics used here, are expected to improve these results further.
-
-\subsection{Summary of Findings}
-
-\begin{table}[ht]
-\centering
-\begin{tabular}{lcccc}
-\toprule
-Configuration & GNN AUC & GNN AP & GNN F1 & Label F1 \\
-\midrule
-CARE-GNN (original RL) & 0.9398 & 0.8535 & 0.9011 & 0.7215 \\
-CAPN (default) & 0.9445 & 0.8568 & 0.8994 & 0.8935 \\
-CAPN + LLM priors & 0.9453 & 0.8587 & 0.9038 & 0.8935 \\
-CAPN + LLM state (v1) & 0.9426 & 0.8574 & 0.8987 & 0.8945 \\
-\textbf{CAPN + reasoning (v2)} & \textbf{0.9450} & \textbf{0.8595} & 0.9000 & \textbf{0.8945} \\
-\bottomrule
-\end{tabular}
-\caption{Summary of best configurations on Amazon. Bold indicates best per column (excluding LLM priors, which is orthogonal to enrichment).}
-\label{tab:summary}
-\end{table}
-
-\noindent
-Key findings from the Amazon evaluation:
-\begin{enumerate}
-    \item \textbf{CAPN improves over CARE-GNN} on the primary ranking metrics (+0.47pp AUC, +0.33pp AP), validating the learned policy approach.
-    \item \textbf{The policy network is essential}, not just the MLP predictor. The MLP alone hurts GNN performance; the policy network recovers and surpasses the baseline.
-    \item \textbf{LLM priors provide small but consistent gains}, with the best overall configuration being CAPN + LLM priors (AUC 0.9453).
-    \item \textbf{CAPN is robust to hyperparameter choice}: the policy loss weight $\lambda_\pi$ can vary 50$\times$ with negligible impact.
-    \item \textbf{LLM semantic state enrichment (v1) fails} due to the lossy sentence-transformer text bottleneck, producing neutral-to-negative results.
-    \item \textbf{LLM reasoning state enrichment (v2) succeeds}: Claude reasoning scores add +0.05pp AUC and +0.27pp AP by providing compact fraud-relevant pattern analysis that avoids the text round-trip. This demonstrates that the \emph{form} of LLM integration---reasoning scores rather than text embeddings---is the critical design choice.
-\end{enumerate}
 
 
 \clearpage

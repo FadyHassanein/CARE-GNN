@@ -74,7 +74,8 @@ class StateConstructor:
 
     def __init__(self, adj_lists, homo_adj, features, device=None,
                  llm_embeddings=None, llm_projector=None,
-                 enrichment_tensor=None, enrichment_projector=None):
+                 enrichment_tensor=None, enrichment_projector=None,
+                 text_risk_scores=None):
         """
         :param adj_lists: list of adjacency lists for each relation
         :param homo_adj: homogeneous graph adjacency list (for structural overlap)
@@ -84,6 +85,9 @@ class StateConstructor:
         :param llm_projector: LLMProjector module (optional, v1)
         :param enrichment_tensor: precomputed graph/reasoning features [N, D] (optional, v2)
         :param enrichment_projector: LLMProjector module for v2 features (optional)
+        :param text_risk_scores: precomputed text fraud scores [N, text_dim] (optional, v4)
+                                  Added directly to state vector without projection
+                                  (they are already compact, ~6 dims)
         """
         self.adj_lists = adj_lists
         self.homo_adj = homo_adj
@@ -94,6 +98,7 @@ class StateConstructor:
         self.llm_projector = llm_projector
         self.enrichment_tensor = enrichment_tensor
         self.enrichment_projector = enrichment_projector
+        self.text_risk_scores = text_risk_scores
 
         # precompute max degree per relation for normalization
         self.max_degrees = []
@@ -186,6 +191,12 @@ class StateConstructor:
             enrich_raw = self.enrichment_tensor[node_indices]
             enrich_proj = self.enrichment_projector(enrich_raw.to(self.device))
             components.append(enrich_proj)
+
+        # v4 text risk scores: appended directly (already compact ~6 dims)
+        if self.text_risk_scores is not None:
+            node_indices = torch.LongTensor(nodes).to(self.text_risk_scores.device)
+            text_raw = self.text_risk_scores[node_indices]
+            components.append(text_raw.to(self.device))
 
         state = torch.cat(components, dim=1)
 
@@ -329,13 +340,16 @@ class PolicyNetwork(nn.Module):
         self._log_probs.append(log_probs)
         self._thresholds.append(thresholds)
 
-    def get_policy_loss(self, reward):
+    def get_policy_loss(self, reward, lambda_entropy=0.01):
         """
-        Compute REINFORCE policy gradient loss.
+        Compute REINFORCE policy gradient loss with entropy regularization.
 
-        loss = -E[R * sum_r(log π(t_r | s))]
+        loss = -advantage * sum_r(log π(t_r | s)) - λ_H * H(π)
 
-        :param reward: scalar reward for this batch
+        Entropy bonus prevents threshold collapse and encourages exploration.
+
+        :param reward: scalar advantage (normalized reward) for this batch
+        :param lambda_entropy: weight for entropy bonus
         :return loss: policy gradient loss
         """
         if not self._log_probs:
@@ -343,7 +357,22 @@ class PolicyNetwork(nn.Module):
 
         # sum log probs across relations
         total_log_prob = torch.stack([lp.mean() for lp in self._log_probs]).sum()
-        loss = -reward * total_log_prob
+        policy_loss = -reward * total_log_prob
+
+        # Entropy bonus: H(Beta(α,β)) = ln B(α,β) - (α-1)ψ(α) - (β-1)ψ(β) + (α+β-2)ψ(α+β)
+        # We approximate using the stored thresholds — higher entropy = more exploration
+        entropy = torch.tensor(0.0, device=next(self.parameters()).device)
+        if self._thresholds and lambda_entropy > 0:
+            for t in self._thresholds:
+                # Entropy approximation from threshold variance:
+                # For Beta, max entropy at α=β=1 (uniform), min at extreme α,β
+                # Use: -t*log(t+ε) - (1-t)*log(1-t+ε) as binary entropy proxy
+                t_clamped = t.detach().clamp(0.01, 0.99)
+                h = -(t_clamped * torch.log(t_clamped) + (1 - t_clamped) * torch.log(1 - t_clamped))
+                entropy = entropy + h.mean()
+            entropy = entropy / len(self._thresholds)
+
+        loss = policy_loss - lambda_entropy * entropy
         return loss
 
 
@@ -366,13 +395,20 @@ class ShapedRewardComputer:
         self.baseline_acc = None
         self.prev_avg_dist = None
         self.reward_log = []
+        # Advantage normalization: running mean/std of rewards
+        self.reward_mean = 0.0
+        self.reward_std = 1.0
+        self.reward_count = 0
 
-    def compute_reward(self, avg_dist, batch_acc, thresholds):
+    def compute_reward(self, avg_dist, batch_acc, thresholds, return_raw=False):
         """
         :param avg_dist: average neighbor distance for this batch (float)
         :param batch_acc: classification accuracy for this batch (float)
         :param thresholds: list of threshold tensors per relation
-        :return reward: scalar reward value
+        :param return_raw: if True, return (raw_reward, advantage) tuple so the
+                           caller can decide which to use (Actor-Critic uses raw,
+                           REINFORCE uses advantage)
+        :return: advantage scalar (or tuple when return_raw=True)
         """
         # distance improvement component
         if self.prev_avg_dist is not None:
@@ -397,10 +433,18 @@ class ShapedRewardComputer:
         else:
             reg_penalty = 0.0
 
-        reward = self.w1 * dist_reward + self.w2 * acc_reward - self.w3 * reg_penalty
+        raw_reward = self.w1 * dist_reward + self.w2 * acc_reward - self.w3 * reg_penalty
+
+        # Advantage normalization: subtract running mean, divide by running std
+        self.reward_count += 1
+        self.reward_mean = self.ema_decay * self.reward_mean + (1 - self.ema_decay) * raw_reward
+        self.reward_std = self.ema_decay * self.reward_std + (1 - self.ema_decay) * (raw_reward - self.reward_mean) ** 2
+        running_std = max(self.reward_std ** 0.5, 1e-8)
+        advantage = (raw_reward - self.reward_mean) / running_std
 
         self.reward_log.append({
-            'reward': reward,
+            'reward': raw_reward,
+            'advantage': advantage,
             'dist_reward': dist_reward,
             'acc_reward': acc_reward,
             'reg_penalty': reg_penalty,
@@ -408,7 +452,9 @@ class ShapedRewardComputer:
             'batch_acc': batch_acc,
         })
 
-        return reward
+        if return_raw:
+            return raw_reward, advantage
+        return advantage
 
     def reset(self):
         """Reset for new training run."""
@@ -527,3 +573,84 @@ class MultiViewDistance:
         # combine
         multi_dist = gamma * label_dist + (1 - gamma) * struct_dist
         return multi_dist
+
+
+class ValueNetwork(nn.Module):
+    """Critic network for Actor-Critic advantage estimation.
+
+    V(s) estimates the expected shaped-reward from a given state.
+    Advantage A = R - V(s) replaces the raw reward in the policy gradient,
+    reducing variance compared to vanilla REINFORCE.
+
+    Shares the same state representation as :class:`PolicyNetwork`.
+    """
+
+    def __init__(self, state_dim, hidden_dim=64):
+        super(ValueNetwork, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 1),
+        )
+
+    def forward(self, state):
+        """:param state: [batch, state_dim] -> :return: [batch, 1] value estimates."""
+        return self.net(state)
+
+
+class TextFeatureGate(nn.Module):
+    """Gated injection of text-based features into GNN node features.
+
+    Avoids the failure mode observed with raw concatenation: the original
+    feature dimension is preserved and a learnable per-dimension gate controls
+    how much of the projected text signal is added.
+
+    output = x + sigmoid(gate) * W @ text_scores
+
+    The gate is initialised near zero (sigmoid(-2) ~ 0.12) so text influence
+    starts small and grows only if it reduces the supervised loss.
+    """
+
+    def __init__(self, feat_dim, text_dim, init_gate=-2.0):
+        super(TextFeatureGate, self).__init__()
+        self.project = nn.Linear(text_dim, feat_dim)
+        self.gate = nn.Parameter(torch.full((feat_dim,), float(init_gate)))
+
+    def forward(self, features, text_scores):
+        """
+        :param features: [N, feat_dim] original node features (tensor)
+        :param text_scores: [N, text_dim] per-node text risk scores (tensor)
+        :return: [N, feat_dim] features with gated text addition
+        """
+        projected = self.project(text_scores)
+        gate_weights = torch.sigmoid(self.gate)
+        return features + gate_weights * projected
+
+
+class GatedEmbedding(nn.Module):
+    """Drop-in replacement for an ``nn.Embedding`` lookup that applies a
+    :class:`TextFeatureGate` on every forward pass.
+
+    Preserves the original call signature ``features(indices)`` used by the
+    InterAgg/IntraAgg aggregators while keeping per-node text scores gated
+    into the output features. The base embedding's weights stay frozen; only
+    the gate's parameters are trainable.
+    """
+
+    def __init__(self, base_embedding, text_scores, gate_module):
+        super(GatedEmbedding, self).__init__()
+        self.base = base_embedding            # nn.Embedding with requires_grad=False
+        self.gate = gate_module               # TextFeatureGate (trainable)
+        self.register_buffer('text_scores', text_scores, persistent=False)
+
+    def forward(self, indices):
+        base_vecs = self.base(indices)        # [batch, feat_dim]
+        text_vecs = self.text_scores[indices] # [batch, text_dim]
+        return self.gate(base_vecs, text_vecs)
+
+    @property
+    def weight(self):
+        """Expose the base embedding's weight for code that reads .weight."""
+        return self.base.weight

@@ -133,26 +133,72 @@ class CAPNOneLayerCARE(OneLayerCARE):
     """
     CAPN-enhanced CARE-GNN model.
 
-    Extends OneLayerCARE with policy gradient loss from the CAPN policy network.
-    The total loss becomes:
-        L = L_gnn + λ₁ * L_label + λ_policy * L_policy
+    Extends OneLayerCARE with policy-gradient learning on top of the CAPN
+    policy network. Two RL variants are supported:
 
-    Where L_policy is the REINFORCE policy gradient loss for adaptive thresholds.
+    * REINFORCE  (default): uses the normalised advantage from
+      :class:`ShapedRewardComputer` directly in the policy loss.
+    * Actor-Critic:        uses a :class:`ValueNetwork` critic to estimate
+      V(s); advantage = R - V(s), and a TD(0) MSE loss trains the critic.
+
+    Total loss:
+        L = L_gnn + λ_1 * L_label + λ_policy * L_policy + λ_critic * L_critic
+
+    Extra controls:
+    * ``gnn_warmup_epochs`` - disable policy loss for the first N epochs so the
+      GNN can stabilise before the RL signal is added.
+    * ``lambda_policy_ramp_epochs`` - linearly ramp the effective
+      ``lambda_policy`` from 0 up to ``lambda_policy`` over the given epochs
+      after warmup (set to 0 to disable ramping).
     """
 
     def __init__(self, num_classes, inter1, lambda_1, lambda_policy=0.1,
-                 reward_computer=None, loss_fn=None):
+                 reward_computer=None, loss_fn=None,
+                 value_network=None, lambda_critic=0.1,
+                 use_actor_critic=False,
+                 gnn_warmup_epochs=0, lambda_policy_ramp_epochs=0):
         """
         :param num_classes: number of output classes
         :param inter1: InterAgg layer (with CAPN components attached)
         :param lambda_1: weight for label similarity loss
-        :param lambda_policy: weight for policy gradient loss
+        :param lambda_policy: final weight for policy gradient loss
         :param reward_computer: ShapedRewardComputer instance
         :param loss_fn: optional custom loss function
+        :param value_network: optional :class:`ValueNetwork` for Actor-Critic
+        :param lambda_critic: weight for critic MSE loss
+        :param use_actor_critic: if True, use critic-based advantage; otherwise
+                                 fall back to REINFORCE using the reward
+                                 computer's normalised advantage
+        :param gnn_warmup_epochs: number of initial epochs in which the policy
+                                  loss (and critic loss) is disabled
+        :param lambda_policy_ramp_epochs: number of epochs after warmup to
+                                          linearly ramp lambda_policy from 0
+                                          up to its target value
         """
         super(CAPNOneLayerCARE, self).__init__(num_classes, inter1, lambda_1, loss_fn)
         self.lambda_policy = lambda_policy
         self.reward_computer = reward_computer
+        self.value_network = value_network
+        self.lambda_critic = lambda_critic
+        self.use_actor_critic = use_actor_critic and value_network is not None
+        self.gnn_warmup_epochs = gnn_warmup_epochs
+        self.lambda_policy_ramp_epochs = lambda_policy_ramp_epochs
+        self._current_epoch = 0
+
+    def set_epoch(self, epoch):
+        """Called from the training loop to schedule warmup/ramp."""
+        self._current_epoch = int(epoch)
+
+    def _effective_lambda_policy(self):
+        """Return the current effective lambda_policy (respecting warmup + ramp)."""
+        epoch = self._current_epoch
+        if epoch < self.gnn_warmup_epochs:
+            return 0.0
+        if self.lambda_policy_ramp_epochs <= 0:
+            return self.lambda_policy
+        progress = min(1.0, (epoch - self.gnn_warmup_epochs) /
+                       max(1, self.lambda_policy_ramp_epochs))
+        return self.lambda_policy * progress
 
     def loss(self, nodes, labels, train_flag=True):
         gnn_scores, label_scores = self.forward(nodes, labels, train_flag)
@@ -162,24 +208,52 @@ class CAPNOneLayerCARE(OneLayerCARE):
         gnn_loss = self.xent(gnn_scores, labels.squeeze())
         supervised_loss = gnn_loss + self.lambda_1 * label_loss
 
-        # CAPN policy gradient loss
+        eff_lambda = self._effective_lambda_policy() if train_flag else 0.0
         policy_loss = torch.tensor(0.0, device=gnn_scores.device)
-        if train_flag and self.inter1.use_capn and self.reward_computer is not None:
-            # compute batch accuracy for reward
+        critic_loss = torch.tensor(0.0, device=gnn_scores.device)
+
+        # Policy learning is only active once past warmup AND we have a
+        # reward computer AND this is a training pass.
+        if (train_flag and self.inter1.use_capn and self.reward_computer is not None
+                and eff_lambda > 0):
             with torch.no_grad():
                 preds = gnn_scores.argmax(dim=1)
                 batch_acc = (preds == labels.squeeze()).float().mean().item()
 
-            # compute shaped reward
             avg_dist = self.inter1.get_capn_avg_dist()
             capn_thresholds = self.inter1.get_capn_thresholds()
-            reward = self.reward_computer.compute_reward(avg_dist, batch_acc, capn_thresholds)
 
-            # compute policy gradient loss
-            policy_loss = self.inter1.get_capn_policy_loss(reward)
+            if self.use_actor_critic:
+                # Actor-Critic: critic estimates V(s); advantage = R - V(s)
+                raw_reward, _ = self.reward_computer.compute_reward(
+                    avg_dist, batch_acc, capn_thresholds, return_raw=True)
 
-            logger.debug(f'CAPN reward: {reward:.4f}, policy_loss: {policy_loss.item():.4f}, '
-                         f'batch_acc: {batch_acc:.4f}')
+                states = self.inter1.get_capn_states()
+                if states:
+                    # pool per-relation states and compute scalar V(s) per relation
+                    values = torch.stack([self.value_network(s).mean() for s in states])
+                    v_mean = values.mean()
+                    advantage = raw_reward - v_mean.detach().item()
+                    # policy update uses advantage
+                    policy_loss = self.inter1.get_capn_policy_loss(advantage)
+                    # critic regresses toward the observed raw reward
+                    target = torch.tensor(float(raw_reward), device=gnn_scores.device,
+                                          dtype=values.dtype)
+                    critic_loss = ((values - target) ** 2).mean()
+                else:
+                    # states missing (e.g. first batch setup) — fall back to raw reward
+                    policy_loss = self.inter1.get_capn_policy_loss(raw_reward)
+            else:
+                # REINFORCE path: normalised advantage from ShapedRewardComputer
+                reward = self.reward_computer.compute_reward(
+                    avg_dist, batch_acc, capn_thresholds)
+                policy_loss = self.inter1.get_capn_policy_loss(reward)
 
-        final_loss = supervised_loss + self.lambda_policy * policy_loss
+            logger.debug(f'CAPN policy_loss: {policy_loss.item():.4f}, '
+                         f'critic_loss: {critic_loss.item():.4f}, '
+                         f'batch_acc: {batch_acc:.4f}, eff_lambda: {eff_lambda:.4f}')
+
+        final_loss = (supervised_loss
+                      + eff_lambda * policy_loss
+                      + self.lambda_critic * critic_loss)
         return final_loss

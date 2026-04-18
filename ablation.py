@@ -7,6 +7,8 @@ import sys
 import time
 import traceback
 
+import numpy as np
+
 from train import train, setup_logging, parse_args
 
 logger = logging.getLogger(__name__)
@@ -22,54 +24,97 @@ logger = logging.getLogger(__name__)
 """
 
 
-def run_ablation(base_args, experiments, output_dir='results/ablation'):
+def run_ablation(base_args, experiments, output_dir='results/ablation', num_seeds=1):
     """
-    Run a set of ablation experiments.
+    Run a set of ablation experiments with optional multi-seed evaluation.
     :param base_args: base argument namespace
     :param experiments: list of dicts, each mapping arg names to values to override
     :param output_dir: directory to save results
+    :param num_seeds: number of seeds to run per experiment (default 1)
     """
     os.makedirs(output_dir, exist_ok=True)
     all_results = {}
+    base_seed = getattr(base_args, 'seed', 72)
 
     for i, exp in enumerate(experiments):
         exp_name = exp.pop('name', f'experiment_{i}')
         logger.info(f'\n{"="*60}')
-        logger.info(f'Running experiment: {exp_name}')
+        logger.info(f'Running experiment: {exp_name} ({num_seeds} seed(s))')
         logger.info(f'{"="*60}')
 
-        # create a copy of base args and override with experiment-specific args
-        exp_args = argparse.Namespace(**vars(base_args))
-        for key, value in exp.items():
-            setattr(exp_args, key, value)
+        seed_metrics_list = []
+        total_elapsed = 0
 
-        logger.info(f'Config: {exp}')
+        for seed_offset in range(num_seeds):
+            seed = base_seed + seed_offset
+            if num_seeds > 1:
+                logger.info(f'  Seed {seed_offset+1}/{num_seeds} (seed={seed})')
 
-        try:
-            start_time = time.time()
-            model, performance_log = train(exp_args)
-            elapsed = time.time() - start_time
+            # create a copy of base args and override with experiment-specific args
+            exp_args = argparse.Namespace(**vars(base_args))
+            for key, value in exp.items():
+                setattr(exp_args, key, value)
+            exp_args.seed = seed
 
-            if performance_log:
-                best_metrics = max(performance_log, key=lambda m: m.get('gnn_auc', 0))
-            else:
-                best_metrics = {}
+            logger.info(f'Config: {exp}')
 
+            try:
+                start_time = time.time()
+                model, performance_log = train(exp_args)
+                elapsed = time.time() - start_time
+                total_elapsed += elapsed
+
+                if performance_log:
+                    best_metrics = max(performance_log, key=lambda m: m.get('gnn_auc', 0))
+                else:
+                    best_metrics = {}
+
+                clean_metrics = {k: v.tolist() if hasattr(v, 'tolist') else v
+                                 for k, v in best_metrics.items()
+                                 if not k.endswith('confusion_matrix')}
+                seed_metrics_list.append(clean_metrics)
+
+                logger.info(f'  Seed {seed}: GNN AUC={clean_metrics.get("gnn_auc", "N/A"):.4f} ({elapsed:.1f}s)')
+
+            except Exception as e:
+                tb = traceback.format_exc()
+                logger.error(f'  Seed {seed} failed: {e}\n{tb}')
+                seed_metrics_list.append({'error': str(e) or repr(e)})
+
+        # aggregate results
+        valid_runs = [m for m in seed_metrics_list if 'error' not in m and 'gnn_auc' in m]
+
+        if num_seeds == 1 and len(valid_runs) == 1:
+            # single seed: backward-compatible format
             all_results[exp_name] = {
                 'config': exp,
-                'best_metrics': {k: v.tolist() if hasattr(v, 'tolist') else v
-                                 for k, v in best_metrics.items()
-                                 if not k.endswith('confusion_matrix')},
-                'elapsed_seconds': elapsed,
+                'best_metrics': valid_runs[0],
+                'elapsed_seconds': total_elapsed,
             }
-            logger.info(f'Experiment {exp_name} completed in {elapsed:.1f}s')
-            if best_metrics:
-                logger.info(f'Best GNN AUC: {best_metrics.get("gnn_auc", "N/A")}')
+        else:
+            # multi-seed: report mean +/- std
+            auc_values = [m['gnn_auc'] for m in valid_runs]
+            ap_values = [m.get('gnn_ap', 0) for m in valid_runs]
+            f1_values = [m.get('gnn_f1', 0) for m in valid_runs]
 
-        except Exception as e:
-            tb = traceback.format_exc()
-            logger.error(f'Experiment {exp_name} failed: {e}\n{tb}')
-            all_results[exp_name] = {'error': str(e) or repr(e), 'traceback': tb}
+            result = {
+                'config': exp,
+                'num_seeds': num_seeds,
+                'num_valid': len(valid_runs),
+                'mean_auc': float(np.mean(auc_values)) if auc_values else 0,
+                'std_auc': float(np.std(auc_values)) if auc_values else 0,
+                'mean_ap': float(np.mean(ap_values)) if ap_values else 0,
+                'std_ap': float(np.std(ap_values)) if ap_values else 0,
+                'mean_f1': float(np.mean(f1_values)) if f1_values else 0,
+                'std_f1': float(np.std(f1_values)) if f1_values else 0,
+                'per_seed_auc': auc_values,
+                'best_metrics': valid_runs[int(np.argmax(auc_values))] if auc_values else {},
+                'elapsed_seconds': total_elapsed,
+            }
+            all_results[exp_name] = result
+
+            if auc_values:
+                logger.info(f'{exp_name}: AUC={np.mean(auc_values):.4f} +/- {np.std(auc_values):.4f}')
 
         # restore the name for results
         exp['name'] = exp_name
@@ -178,20 +223,105 @@ def get_capn_llm_state_experiments():
 
 
 def get_capn_enrichment_experiments():
-    """A8: v2 state enrichment — structural features, Claude reasoning scores, both."""
+    """A7: v2 state enrichment — structural features, Claude reasoning scores, both."""
     return [
         {'name': 'CAPN (baseline)', 'model': 'CARE', 'use_capn': True,
          'enrichment_mode': 'none'},
-        # {'name': 'CAPN + structural', 'model': 'CARE', 'use_capn': True,
-        #  'enrichment_mode': 'structural'},
+        {'name': 'CAPN + structural', 'model': 'CARE', 'use_capn': True,
+         'enrichment_mode': 'structural'},
         {'name': 'CAPN + reasoning', 'model': 'CARE', 'use_capn': True,
          'enrichment_mode': 'reasoning'},
-        # {'name': 'CAPN + both', 'model': 'CARE', 'use_capn': True,
-        #  'enrichment_mode': 'both'},
+        {'name': 'CAPN + both', 'model': 'CARE', 'use_capn': True,
+         'enrichment_mode': 'both'},
     ]
 
 
-def run_studies(base_args, study_names, studies, output_dir, dataset='yelp'):
+def get_capn_feature_enrichment_experiments():
+    """A8: v3 feature-level enrichment — reasoning scores concatenated to node features."""
+    return [
+        {'name': 'CAPN (baseline)', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'none', 'enrichment_mode': 'none'},
+        {'name': 'CAPN + feat-reasoning', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'reasoning', 'enrichment_mode': 'none'},
+        {'name': 'CAPN + feat + state reasoning', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'reasoning', 'enrichment_mode': 'reasoning'},
+    ]
+
+
+def get_thesis_experiments(dataset='yelp'):
+    """Main thesis ablation: the 4-row GNN + RL + LLM framework comparison.
+
+    Row 1: GNN only            — CARE-GNN baseline (heuristic RL)
+    Row 2: GNN + RL            — CAPN Actor-Critic + LLM priors
+    Row 3: GNN + LLM           — CARE-GNN + text-gate enrichment
+    Row 4: GNN + RL + LLM      — Full framework (all three pillars)
+    """
+    priors_path = f'data/llm_priors/{dataset}_priors.json'
+    return [
+        {
+            'name': 'Row 1: GNN only (CARE-GNN)',
+            'model': 'CARE',
+            'use_capn': False,
+            'use_actor_critic': False,
+            'text_enrichment': 'none',
+            'text_state_enrichment': False,
+            'llm_priors_file': '',
+        },
+        {
+            'name': 'Row 2: GNN+RL (CAPN-AC + priors)',
+            'model': 'CARE',
+            'use_capn': True,
+            'use_actor_critic': True,
+            'gnn_warmup_epochs': 5,
+            'lambda_policy_ramp_epochs': 5,
+            'llm_priors_file': priors_path,
+            'text_enrichment': 'none',
+            'text_state_enrichment': False,
+        },
+        {
+            'name': 'Row 3: GNN+LLM (text gate)',
+            'model': 'CARE',
+            'use_capn': False,
+            'use_actor_critic': False,
+            'text_enrichment': 'gate',
+            'text_state_enrichment': False,
+            'llm_priors_file': '',
+        },
+        {
+            'name': 'Row 4: Full (GNN+RL+LLM)',
+            'model': 'CARE',
+            'use_capn': True,
+            'use_actor_critic': True,
+            'gnn_warmup_epochs': 5,
+            'lambda_policy_ramp_epochs': 5,
+            'llm_priors_file': priors_path,
+            'text_enrichment': 'gate',
+            'text_state_enrichment': True,
+        },
+    ]
+
+
+def get_capn_combined_experiments(dataset='yelp'):
+    """A9: Full framework — feature enrichment + state enrichment + LLM priors."""
+    priors_path = f'data/llm_priors/{dataset}_priors.json'
+    return [
+        {'name': 'CAPN (baseline)', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'none', 'enrichment_mode': 'none', 'llm_priors_file': ''},
+        {'name': 'CAPN + priors', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'none', 'enrichment_mode': 'none',
+         'llm_priors_file': priors_path},
+        {'name': 'CAPN + feat-reasoning', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'reasoning', 'enrichment_mode': 'none', 'llm_priors_file': ''},
+        {'name': 'CAPN + feat + priors', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'reasoning', 'enrichment_mode': 'none',
+         'llm_priors_file': priors_path},
+        {'name': 'CAPN full (feat + state + priors)', 'model': 'CARE', 'use_capn': True,
+         'feature_enrichment': 'reasoning', 'enrichment_mode': 'reasoning',
+         'llm_priors_file': priors_path},
+    ]
+
+
+def run_studies(base_args, study_names, studies, output_dir, dataset='yelp', num_seeds=1):
     """Run a list of studies with given base args."""
     for study_name in study_names:
         logger.info(f'\n\nStarting study: {study_name}')
@@ -201,7 +331,8 @@ def run_studies(base_args, study_names, studies, output_dir, dataset='yelp'):
             experiments = gen_fn(dataset=dataset)
         else:
             experiments = gen_fn()
-        run_ablation(base_args, experiments, os.path.join(output_dir, study_name))
+        run_ablation(base_args, experiments, os.path.join(output_dir, study_name),
+                     num_seeds=num_seeds)
 
 
 if __name__ == '__main__':
@@ -212,11 +343,14 @@ if __name__ == '__main__':
                         choices=['inter', 'loss', 'layers', 'baseline',
                                  'capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda',
                                  'capn_llm_state', 'capn_enrichment',
+                                 'capn_feature', 'capn_combined', 'thesis',
                                  'all', 'all_capn'],
                         help='Which ablation study to run')
     parser.add_argument('--data', type=str, default='yelp',
                         help='Dataset: yelp, amazon, or both')
     parser.add_argument('--num-epochs', type=int, default=31, help='Epochs per experiment')
+    parser.add_argument('--num-seeds', type=int, default=1,
+                        help='Number of seeds per experiment (default 1). Use 3-5 for statistical significance.')
     parser.add_argument('--output-dir', type=str, default='results/ablation', help='Output directory')
 
     ab_args = parser.parse_args()
@@ -233,9 +367,13 @@ if __name__ == '__main__':
         'capn_lambda': get_capn_lambda_experiments,
         'capn_llm_state': get_capn_llm_state_experiments,
         'capn_enrichment': get_capn_enrichment_experiments,
+        'capn_feature': get_capn_feature_enrichment_experiments,
+        'capn_combined': get_capn_combined_experiments,
+        'thesis': get_thesis_experiments,
     }
 
-    capn_studies = ['capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda', 'capn_llm_state', 'capn_enrichment']
+    capn_studies = ['capn', 'capn_label', 'capn_reward', 'capn_llm', 'capn_lambda',
+                    'capn_llm_state', 'capn_enrichment', 'capn_feature', 'capn_combined']
 
     # determine which studies to run
     if ab_args.study == 'all':
@@ -262,4 +400,5 @@ if __name__ == '__main__':
         base_args = parse_args()
 
         output_dir = os.path.join(ab_args.output_dir, dataset) if len(datasets) > 1 else ab_args.output_dir
-        run_studies(base_args, study_list, studies, output_dir, dataset=dataset)
+        run_studies(base_args, study_list, studies, output_dir, dataset=dataset,
+                    num_seeds=ab_args.num_seeds)
