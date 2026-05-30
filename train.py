@@ -1,5 +1,6 @@
 import time
 import os
+import math
 import random
 import logging
 import argparse
@@ -95,6 +96,24 @@ def parse_args():
 
     # multi-layer
     parser.add_argument('--num-layers', type=int, default=1, help='Number of GNN layers (for MULTI_CARE).')
+    # Nonlinear feature encoder (replaces the single linear transform in InterAgg).
+    parser.add_argument('--feat-encoder', action='store_true', default=False,
+                        help='Use a learnable nonlinear MLP feature encoder in the GNN backbone.')
+    parser.add_argument('--feat-encoder-hidden', type=int, default=64,
+                        help='Hidden width of the nonlinear feature encoder.')
+    parser.add_argument('--feat-encoder-layers', type=int, default=2,
+                        help='Number of linear layers in the feature encoder (>=2 is nonlinear).')
+    parser.add_argument('--feat-encoder-dropout', type=float, default=0.5,
+                        help='Dropout inside the feature encoder.')
+    parser.add_argument('--ego-separation', action='store_true', default=False,
+                        help='Concat-project [self, neighbours] instead of summing (heterophily-aware).')
+    # Cosine LR schedule (anneal the bigger-capacity model out of the noisy plateau).
+    parser.add_argument('--cosine-lr', action='store_true', default=False,
+                        help='Use cosine LR annealing with linear warmup instead of ReduceLROnPlateau.')
+    parser.add_argument('--lr-warmup-epochs', type=int, default=5,
+                        help='Linear warmup epochs before cosine annealing.')
+    parser.add_argument('--lr-min-factor', type=float, default=0.05,
+                        help='Cosine floor as a fraction of base lr.')
 
     # loss function
     parser.add_argument('--loss', type=str, default='ce', help='Loss function: ce, focal, weighted_ce')
@@ -420,6 +439,18 @@ def train(args):
         logger.info(f'CAPN mode enabled: policy_hidden={args.policy_hidden}, policy_lr={args.policy_lr}, '
                     f'lambda_policy={args.lambda_policy}')
 
+    # optional nonlinear feature encoder (addresses single-linear-transform underfitting)
+    feat_encoder = None
+    if args.feat_encoder:
+        from layers import FeatureEncoder
+        feat_encoder = FeatureEncoder(feat_data.shape[1], args.emb_size,
+                                      hidden_dim=args.feat_encoder_hidden,
+                                      dropout=args.feat_encoder_dropout,
+                                      num_layers=args.feat_encoder_layers).to(device)
+        logger.info(f'Nonlinear feature encoder enabled: {feat_data.shape[1]}->'
+                    f'{args.feat_encoder_hidden}x{args.feat_encoder_layers-1}->{args.emb_size}, '
+                    f'dropout={args.feat_encoder_dropout}')
+
     # build models
     if args.model == 'CARE':
         intra_aggs = [IntraAgg(features, feat_data.shape[1], device=device) for _ in range(len(adj_lists))]
@@ -428,7 +459,8 @@ def train(args):
                           dropout=args.dropout, rl_patience=args.rl_patience, rl_epsilon=args.rl_epsilon,
                           policy_network=policy_network, state_constructor=state_constructor,
                           enhanced_label_clf=enhanced_label_clf, multi_view_distance=multi_view_distance,
-                          soft_attn=args.soft_attn)
+                          soft_attn=args.soft_attn, feat_encoder=feat_encoder,
+                          ego_separation=args.ego_separation)
         if args.use_capn:
             gnn_model = CAPNOneLayerCARE(2, inter1, args.lambda_1,
                                           lambda_policy=args.lambda_policy,
@@ -493,7 +525,26 @@ def train(args):
 
     # learning rate scheduler
     scheduler = None
-    if args.use_lr_scheduler:
+    cosine_scheduler = None
+    if args.cosine_lr:
+        # linear warmup -> cosine anneal to lr_min_factor*lr, stepped every epoch
+        warmup = max(1, args.lr_warmup_epochs)
+        total = args.num_epochs
+        min_factor = args.lr_min_factor
+
+        def _cosine_warmup(epoch):
+            if epoch < warmup:
+                return float(epoch + 1) / warmup
+            progress = (epoch - warmup) / max(1, total - warmup)
+            return min_factor + (1 - min_factor) * 0.5 * (1 + math.cos(math.pi * progress))
+
+        cosine_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _cosine_warmup)
+        if policy_optimizer is not None:
+            cosine_scheduler_policy = torch.optim.lr_scheduler.LambdaLR(policy_optimizer, _cosine_warmup)
+        else:
+            cosine_scheduler_policy = None
+        logger.info(f'Cosine LR: warmup={warmup} epochs, anneal to {min_factor}*lr over {total} epochs')
+    elif args.use_lr_scheduler:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='max', patience=args.lr_scheduler_patience,
             factor=args.lr_scheduler_factor, verbose=True)
@@ -613,6 +664,12 @@ def train(args):
                 if early_stopping.step(val_metric):
                     logger.info(f'Early stopping at epoch {epoch}')
                     break
+
+        # cosine LR steps every epoch (outside the eval block)
+        if cosine_scheduler is not None:
+            cosine_scheduler.step()
+            if cosine_scheduler_policy is not None:
+                cosine_scheduler_policy.step()
 
     logger.info('Training complete.')
     return gnn_model, performance_log

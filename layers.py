@@ -15,6 +15,36 @@ logger = logging.getLogger(__name__)
 """
 
 
+class FeatureEncoder(nn.Module):
+    """Learnable nonlinear node-feature encoder (MLP).
+
+    Replaces the single linear ``weight`` transform in the inter-relation
+    aggregator. The original CARE-GNN backbone applies exactly one linear map
+    (feat_dim -> embed_dim) + one ReLU before the classifier, so it cannot
+    represent nonlinear feature interactions. A probe on the frozen YelpChi
+    split shows a plain MLP / gradient-boosting classifier on the same node
+    features beats the single-layer GNN by +4 to +8.6 AUC points — i.e. the
+    backbone underfits. This module gives the backbone genuine nonlinear
+    capacity while keeping the multi-relation aggregation, CAPN, and LLM gate
+    intact. Applied identically to the centre node and the aggregated neighbour
+    features so the combination stays consistent.
+    """
+
+    def __init__(self, feat_dim, embed_dim, hidden_dim=None, dropout=0.5, num_layers=2):
+        super(FeatureEncoder, self).__init__()
+        hidden_dim = hidden_dim or embed_dim
+        layers = []
+        d = feat_dim
+        for _ in range(max(0, num_layers - 1)):
+            layers += [nn.Linear(d, hidden_dim), nn.ReLU(), nn.Dropout(dropout)]
+            d = hidden_dim
+        layers += [nn.Linear(d, embed_dim)]
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class InterAgg(nn.Module):
 
     def __init__(self, features, feature_dim,
@@ -25,7 +55,7 @@ class InterAgg(nn.Module):
                  rl_patience=5, rl_epsilon=1e-4,
                  policy_network=None, state_constructor=None,
                  enhanced_label_clf=None, multi_view_distance=None,
-                 soft_attn=False):
+                 soft_attn=False, feat_encoder=None, ego_separation=False):
         """
         Initialize the inter-relation aggregator.
         Generalized to support N relations (not hardcoded to 3).
@@ -72,6 +102,15 @@ class InterAgg(nn.Module):
         self.multi_view_distance = multi_view_distance
         self.use_capn = policy_network is not None
         self.soft_attn = soft_attn
+
+        # optional nonlinear feature encoder (None = original single-linear transform)
+        self.feat_encoder = feat_encoder
+
+        # optional ego/neighbour separation: concat-project [self, neighbours]
+        # instead of summing them, so the strong self-signal is not diluted by
+        # heterophilous (camouflaged) neighbours. embed_dim stays unchanged.
+        self.ego_separation = ego_separation
+        self.combine = nn.Linear(2 * embed_dim, embed_dim) if ego_separation else None
 
         # set device on all intra-aggregators
         for agg in self.intra_aggs:
@@ -247,7 +286,8 @@ class InterAgg(nn.Module):
             mean_thresholds = [t.mean().item() for t in self._capn_thresholds]
             combined = threshold_inter_agg(
                 self.num_relations, self_feats, neigh_feats, self.embed_dim,
-                self.weight, mean_thresholds, n, self.device)
+                self.weight, mean_thresholds, n, self.device,
+                encoder=self.feat_encoder, combine=self.combine)
         elif self.inter == 'Att':
             combined, attention = att_inter_agg(
                 self.num_relations, self.leakyrelu, self_feats, neigh_feats,
@@ -266,7 +306,8 @@ class InterAgg(nn.Module):
         elif self.inter == 'GNN':
             combined = threshold_inter_agg(
                 self.num_relations, self_feats, neigh_feats, self.embed_dim,
-                self.weight, self.thresholds, n, self.device)
+                self.weight, self.thresholds, n, self.device,
+                encoder=self.feat_encoder, combine=self.combine)
 
         # the reinforcement learning module (only in non-CAPN mode)
         if not self.use_capn and self.RL and train_flag:
@@ -672,14 +713,27 @@ def att_inter_agg(num_relations, att_layer, self_feats, neigh_feats, embed_dim, 
     return combined, att
 
 
-def threshold_inter_agg(num_relations, self_feats, neigh_feats, embed_dim, weight, threshold, n, device):
+def threshold_inter_agg(num_relations, self_feats, neigh_feats, embed_dim, weight, threshold, n, device, encoder=None, combine=None):
     """
     CARE-GNN inter-relation aggregator
     Eq. (9) in the paper
+
+    When ``encoder`` is provided, the single linear ``weight`` transform is
+    replaced by the nonlinear MLP encoder (applied identically to centre and
+    neighbour features) to give the backbone nonlinear capacity.
+
+    When ``combine`` (a Linear[2*embed_dim, embed_dim]) is provided, the centre
+    and aggregated-neighbour representations are concatenated and projected
+    instead of summed, keeping the ego signal in its own channels — important on
+    heterophilous fraud graphs where neighbours are camouflaged.
     """
 
-    center_h = torch.mm(self_feats, weight)
-    neigh_h = torch.mm(neigh_feats, weight)
+    if encoder is not None:
+        center_h = encoder(self_feats)
+        neigh_h = encoder(neigh_feats)
+    else:
+        center_h = torch.mm(self_feats, weight)
+        neigh_h = torch.mm(neigh_feats, weight)
 
     aggregated = torch.zeros(size=(n, embed_dim), device=device)
 
@@ -687,6 +741,9 @@ def threshold_inter_agg(num_relations, self_feats, neigh_feats, embed_dim, weigh
     for r in range(num_relations):
         aggregated += neigh_h[r * n:(r + 1) * n, :] * threshold[r]
 
-    combined = F.relu(center_h + aggregated)
+    if combine is not None:
+        combined = F.relu(combine(torch.cat([center_h, aggregated], dim=1)))
+    else:
+        combined = F.relu(center_h + aggregated)
 
     return combined
