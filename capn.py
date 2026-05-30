@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import os
+from collections import OrderedDict
 
 import torch
 import torch.nn as nn
@@ -536,14 +537,20 @@ class MultiViewDistance:
             self.gammas = gamma_init
         else:
             self.gammas = [gamma_init] * num_relations
-        # Cache structural Jaccard distances (graph is static)
-        self._jaccard_cache = {}
+        # Cache structural Jaccard distances (graph is static). Bounded LRU:
+        # the plain dict was unbounded and grew to ~1 GB over a full run on
+        # YelpChi (~7.7M edges), OOMing under memory pressure. Memoization is a
+        # pure speed optimisation, so evicting and recomputing is value-identical.
+        self._jaccard_cache = OrderedDict()
+        self._jaccard_cache_max = 500_000
 
     def _get_struct_dist(self, center_node, neigh_id, relation_idx):
-        """Cached structural Jaccard distance for a node pair."""
+        """Cached structural Jaccard distance for a node pair (bounded LRU)."""
         key = (center_node, neigh_id, relation_idx)
-        if key in self._jaccard_cache:
-            return self._jaccard_cache[key]
+        cached = self._jaccard_cache.get(key)
+        if cached is not None:
+            self._jaccard_cache.move_to_end(key)
+            return cached
         adj_list = self.adj_lists[relation_idx]
         center_neighs = adj_list.get(center_node, set())
         neigh_neighs = adj_list.get(neigh_id, set())
@@ -553,6 +560,8 @@ class MultiViewDistance:
             jaccard = 0.0
         dist = 1.0 - jaccard
         self._jaccard_cache[key] = dist
+        if len(self._jaccard_cache) > self._jaccard_cache_max:
+            self._jaccard_cache.popitem(last=False)  # evict least-recently-used
         return dist
 
     def compute_distance(self, center_score, neigh_scores, neighs_indices,
