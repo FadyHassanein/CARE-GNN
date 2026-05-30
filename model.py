@@ -230,16 +230,16 @@ class CAPNOneLayerCARE(OneLayerCARE):
 
                 states = self.inter1.get_capn_states()
                 if states:
-                    # pool per-relation states and compute scalar V(s) per relation
-                    values = torch.stack([self.value_network(s).mean() for s in states])
-                    v_mean = values.mean()
-                    advantage = raw_reward - v_mean.detach().item()
-                    # policy update uses advantage
+                    # Per-node, per-relation V(s): keep [B, 1] from each relation's
+                    # ValueNetwork call and concat across relations -> [B, R].
+                    # Letting V(s) vary per element is what gives the policy its
+                    # B*R effective gradient samples (vs. 1 in the legacy scalar form).
+                    values = torch.cat([self.value_network(s) for s in states], dim=1)
+                    advantage = raw_reward - values.detach()  # [B, R]
                     policy_loss = self.inter1.get_capn_policy_loss(advantage)
-                    # critic regresses toward the observed raw reward
-                    target = torch.tensor(float(raw_reward), device=gnn_scores.device,
-                                          dtype=values.dtype)
-                    critic_loss = ((values - target) ** 2).mean()
+                    # Critic regresses each per-element V(s) toward the observed
+                    # scalar reward (broadcast over [B, R]).
+                    critic_loss = ((values - raw_reward) ** 2).mean()
                 else:
                     # states missing (e.g. first batch setup) — fall back to raw reward
                     policy_loss = self.inter1.get_capn_policy_loss(raw_reward)
@@ -253,7 +253,9 @@ class CAPNOneLayerCARE(OneLayerCARE):
                          f'critic_loss: {critic_loss.item():.4f}, '
                          f'batch_acc: {batch_acc:.4f}, eff_lambda: {eff_lambda:.4f}')
 
-        final_loss = (supervised_loss
-                      + eff_lambda * policy_loss
-                      + self.lambda_critic * critic_loss)
+        final_loss = supervised_loss
+        if eff_lambda > 0:
+            final_loss = (final_loss
+                          + eff_lambda * policy_loss
+                          + self.lambda_critic * critic_loss)
         return final_loss

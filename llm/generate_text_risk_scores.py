@@ -321,18 +321,19 @@ def generate_scores_llm(texts, dataset='yelp', output_dir=None,
                         scores[node_id, si] = np.clip(float(val), 0.0, 1.0)
                     checkpoint[str(node_id)] = parsed[idx]
                 else:
+                    # Partial-parse fallback: fill in-memory scores with template
+                    # but do NOT checkpoint — this lets a subsequent run retry
+                    # these nodes with the LLM instead of marking them "done".
                     tpl = _compute_one(batch_texts[idx])
                     scores[node_id] = tpl
-                    checkpoint[str(node_id)] = {name: float(tpl[si])
-                                                for si, name in enumerate(SCORE_NAMES)}
 
         except Exception as e:
             logger.warning(f'API error for batch starting at node {batch_ids[0]}: {e}')
+            # Whole-batch API failure (rate limits, quota, network): fill template
+            # in-memory only, do NOT checkpoint, so the next run retries these nodes.
             for i, node_id in enumerate(batch_ids):
                 tpl = _compute_one(batch_texts[i])
                 scores[node_id] = tpl
-                checkpoint[str(node_id)] = {name: float(tpl[si])
-                                            for si, name in enumerate(SCORE_NAMES)}
 
         processed += len(batch_ids)
         if processed - last_ckpt >= checkpoint_interval:

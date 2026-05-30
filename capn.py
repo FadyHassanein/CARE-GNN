@@ -340,24 +340,34 @@ class PolicyNetwork(nn.Module):
         self._log_probs.append(log_probs)
         self._thresholds.append(thresholds)
 
-    def get_policy_loss(self, reward, lambda_entropy=0.01):
+    def get_policy_loss(self, advantage, lambda_entropy=0.01):
         """
         Compute REINFORCE policy gradient loss with entropy regularization.
 
-        loss = -advantage * sum_r(log π(t_r | s)) - λ_H * H(π)
+        Two modes:
+        - **Scalar advantage** (legacy REINFORCE / fallback path): one effective
+          gradient sample per minibatch — high variance.
+        - **Per-element [B, R] advantage** (Actor-Critic): each (node, relation)
+          pair contributes an independent gradient sample weighted by its own
+          advantage A[b,r] = R - V(s)[b,r], giving roughly B*R effective samples.
 
-        Entropy bonus prevents threshold collapse and encourages exploration.
-
-        :param reward: scalar advantage (normalized reward) for this batch
+        :param advantage: scalar (Python float / 0-d tensor) or [B, R] tensor
         :param lambda_entropy: weight for entropy bonus
         :return loss: policy gradient loss
         """
         if not self._log_probs:
             return torch.tensor(0.0, device=next(self.parameters()).device)
 
-        # sum log probs across relations
-        total_log_prob = torch.stack([lp.mean() for lp in self._log_probs]).sum()
-        policy_loss = -reward * total_log_prob
+        if torch.is_tensor(advantage) and advantage.dim() == 2:
+            # _log_probs is a list of R tensors, each [B]; stack to [B, R].
+            log_probs = torch.stack(self._log_probs, dim=1)
+            # Scale by 1/B (not 1/(B*R)) so the gradient magnitude matches the
+            # legacy scalar path and lambda_policy stays meaningfully calibrated.
+            policy_loss = -(advantage * log_probs).sum() / log_probs.size(0)
+        else:
+            # Legacy scalar path
+            total_log_prob = torch.stack([lp.mean() for lp in self._log_probs]).sum()
+            policy_loss = -advantage * total_log_prob
 
         # Entropy bonus: H(Beta(α,β)) = ln B(α,β) - (α-1)ψ(α) - (β-1)ψ(β) + (α+β-2)ψ(α+β)
         # We approximate using the stored thresholds — higher entropy = more exploration
@@ -435,10 +445,13 @@ class ShapedRewardComputer:
 
         raw_reward = self.w1 * dist_reward + self.w2 * acc_reward - self.w3 * reg_penalty
 
-        # Advantage normalization: subtract running mean, divide by running std
+        # Advantage normalization: subtract running mean, divide by running std.
+        # Variance must be measured against the PRE-update mean — squaring against
+        # the just-updated mean systematically underestimates std at cold start.
         self.reward_count += 1
+        prev_mean = self.reward_mean
         self.reward_mean = self.ema_decay * self.reward_mean + (1 - self.ema_decay) * raw_reward
-        self.reward_std = self.ema_decay * self.reward_std + (1 - self.ema_decay) * (raw_reward - self.reward_mean) ** 2
+        self.reward_std = self.ema_decay * self.reward_std + (1 - self.ema_decay) * (raw_reward - prev_mean) ** 2
         running_std = max(self.reward_std ** 0.5, 1e-8)
         advantage = (raw_reward - self.reward_mean) / running_std
 

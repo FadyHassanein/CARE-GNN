@@ -167,7 +167,7 @@ def test_sage(test_cases, labels, model, batch_size, device=None):
     Test the performance of GraphSAGE
     :returns: dictionary of all metrics
     """
-    test_batch_num = int(len(test_cases) / batch_size) + 1
+    test_batch_num = (len(test_cases) + batch_size - 1) // batch_size
     f1_gnn = 0.0
     acc_gnn = 0.0
     recall_gnn = 0.0
@@ -209,7 +209,7 @@ def test_care(test_cases, labels, model, batch_size, device=None):
     Test the performance of CARE-GNN and its variants
     :returns: dictionary of all metrics for both GNN and label modules
     """
-    test_batch_num = int(len(test_cases) / batch_size) + 1
+    test_batch_num = (len(test_cases) + batch_size - 1) // batch_size
     f1_gnn = 0.0
     acc_gnn = 0.0
     recall_gnn = 0.0
