@@ -1,16 +1,41 @@
 \chapter{Results}
 \lhead{\emph{Chapter4}}
 
-\section{Results and Discussion}
-\vspace{1\baselineskip}
+\section{Chapter Overview and Headline Result}
+\label{sec:ch4-overview}
 
-This chapter reports the experimental evaluation of the unified GNN + RL + LLM framework proposed in Chapter~3. The main thesis claim---that the three-pillar combination significantly outperforms CARE-GNN on a challenging real-world review graph---is tested on the YelpChi dataset in Section~\ref{sec:results-unified}. Supporting evidence for the internal design decisions is provided by the Amazon component ablations (A1--A9), which isolate individual pillars and sub-components in a simpler setting. All experiments use the best validation-AUC checkpoint over 31 training epochs. The primary evaluation metrics are AUC-ROC and Average Precision (AP)---threshold-independent ranking metrics most appropriate for the highly imbalanced fraud detection setting. F1, Precision, and Recall are reported as secondary metrics. Where possible we report the mean $\pm$ standard deviation across three random seeds.
+This chapter reports the experimental evaluation of the unified GNN + RL + LLM framework proposed in Chapter~\ref{Chapter3}. The chapter is organised so that the main thesis claim appears first and the supporting evidence follows:
 
-\paragraph{Headline result.} On YelpChi (3 seeds, 31 epochs each) the unified GNN + RL + LLM framework achieves AUC $0.7856 \pm 0.0022$, AP $0.4108 \pm 0.0052$, and F1-macro $0.6099 \pm 0.0565$, improving on our CARE-GNN reproduction ($0.7657 \pm 0.0007$ AUC) by $+1.99$pp with Welch's $t$-test $p < 0.001$. The detailed table and analysis are given in Section~\ref{sec:results-unified}; readers interested primarily in the main contribution may skip directly to that section.
+\begin{itemize}
+    \item Section~\ref{sec:ch4-protocol} defines the experimental protocol and evaluation metrics used throughout the chapter.
+    \item Section~\ref{sec:results-unified} reports the \emph{primary result}: a three-pillar ablation of the unified framework on YelpChi, which directly tests whether GNN + RL + LLM significantly outperforms CARE-GNN.
+    \item Section~\ref{sec:amazon-ablations} reports the nine component-level ablations on Amazon (A1--A9) that validate individual design decisions from Chapter~\ref{Chapter3}.
+    \item Section~\ref{sec:amazon-baselines} reports reference baselines (GCN, GraphSAGE) on Amazon, included for context only---they are not part of the unified framework.
+\end{itemize}
+
+\paragraph{Headline result.} On YelpChi (3 seeds, 31 epochs each) the unified GNN + RL + LLM framework achieves \textbf{AUC} $\mathbf{0.7856 \pm 0.0022}$, \textbf{AP} $\mathbf{0.4108 \pm 0.0052}$, and \textbf{F1-macro} $\mathbf{0.6099 \pm 0.0565}$, improving over our CARE-GNN reproduction ($0.7657 \pm 0.0007$ AUC) by \textbf{+1.99\,pp} with Welch's $t$-test $p < 0.001$. Against the AUC reported by Dou~et~al.~(2020) for CARE-GNN on the same benchmark (0.7570), the improvement is \textbf{+2.86\,pp}. The full per-row table, per-seed numbers, component contribution, and significance analysis are given in Section~\ref{sec:results-unified}; readers interested primarily in the main contribution may skip directly there.
+
+
+\section{Experimental Protocol and Evaluation Metrics}
+\label{sec:ch4-protocol}
+
+\subsection{Experimental Protocol}
+\label{sec:ch4-protocol-setup}
+
+All experiments use the configurations defined in Chapter~\ref{Chapter3}. Unless explicitly stated otherwise, each training run uses:
+
+\begin{itemize}
+    \item \textbf{Data splits.} Stratified 25\%/15\%/60\% train/validation/test, \texttt{random\_state = 2} (Section~\ref{sec:datasets}). Amazon runs operate on the 8{,}639 labelled nodes; YelpChi runs use all 45{,}954 labelled nodes.
+    \item \textbf{Epochs.} 31 epochs per run; checkpoint selected by best validation AUC.
+    \item \textbf{Seeds.} Amazon ablations (A1--A9) use a single seed $=72$ for the component-level sweep. YelpChi main result (Section~\ref{sec:results-unified}) uses three seeds $\{72, 73, 74\}$ and reports mean~$\pm$~std.
+    \item \textbf{Optimiser and schedule.} Adam with the learning-rate and gradient-clip settings of Section~\ref{sec:unified-loss} (backbone LR $10^{-2}$; policy LR $3\!\times\!10^{-3}$; critic LR $10^{-3}$; backbone clip 1.0; policy/critic clip 5.0).
+    \item \textbf{RL and LLM pillars.} Where the framework's RL pillar is enabled, it uses the actor--critic formulation of Section~\ref{sec:actor-critic} with $E_{\text{warm}} = E_{\text{ramp}} = 5$ and $\lambda_\pi^{\star} = 0.3$. Where the LLM pillar is enabled, text risk scores are produced in template mode (Section~\ref{sec:text-risk-scores}), and graph-reasoning scores are produced by Claude Haiku~4.5 (Section~\ref{sec:claude-reasoning}).
+\end{itemize}
 
 \subsection{Evaluation Metrics}
+\label{sec:ch4-metrics}
 
-To assess model performance, we use the following classification metrics:
+To assess model performance we use the following classification metrics. AUC-ROC and Average Precision are our \emph{primary} metrics, because both are threshold-independent ranking metrics and both are appropriate for the highly imbalanced fraud-detection setting; the remaining metrics are reported as secondary for completeness and for direct comparison with the original CARE-GNN paper.
 
 \subsubsection*{1. AUC-ROC}
 The Area Under the Receiver Operating Characteristic Curve measures ranking quality across all classification thresholds:
@@ -49,60 +74,223 @@ where \(P_n\) and \(R_n\) are the precision and recall at the \(n\)-th threshold
 \noindent
 \textbf{Note on Label AUC.} CAPN and CARE-GNN maintain a separate auxiliary label predictor (MLP or linear) that outputs its own fraud probabilities. We report \textit{Label AUC} to measure the quality of this auxiliary classifier independently of the GNN output. This is particularly relevant for Study A2, which isolates the label predictor's contribution.
 
-\subsection{Supporting Evidence: Baseline Models on Amazon (GCN, GraphSAGE)}
+% [Reference Baselines on Amazon moved to end of chapter as Section~\ref{sec:amazon-baselines}]
 
-Table~\ref{tab:baseline-results} reports the test-set results for the two baseline GNN architectures on the Amazon dataset.
+
+\section{Main Result: Unified GNN + RL + LLM Framework on YelpChi}
+\label{sec:results-unified}
+
+This section reports the \emph{primary result} of this thesis: a three-pillar ablation of the unified framework on the more challenging YelpChi dataset. The section opens with a motivating negative result (naive sentence-transformer enrichment on YelpChi, Section~\ref{sec:yelp-text-experiments}) that justifies the specific design choices of the unified framework---fraud-specific text scores instead of generic embeddings, gated residual injection instead of concatenation, and actor--critic policy optimisation instead of REINFORCE. It then reports the four-row framework ablation, the per-seed variance, the statistical-significance tests, and the comparison with the original CARE-GNN paper. The Amazon component ablations in Section~\ref{sec:amazon-ablations} provide complementary evidence that each individual pillar decision contributes positively in a simpler setting; the YelpChi evaluation reported here is the test that directly addresses the thesis claim---that the three pillars, combined, produce a statistically significant improvement over CARE-GNN.
+
+\subsection{Motivating Study: Yelp Text-Embedding Experiments}
+\label{sec:yelp-text-experiments}
+
+The Amazon experiments (A1--A9, Section~\ref{sec:amazon-ablations}) evaluated CAPN using handcrafted features and LLM-generated structural scores. A natural next question is whether \emph{raw textual content}---the actual review text---can further improve fraud detection when integrated into the CAPN architecture. To investigate this, we conducted a set of preliminary experiments on the YelpChi dataset in which we recovered the original review text for all 45{,}954 nodes and generated sentence embeddings using \texttt{all-MiniLM-L6-v2}.
+
+\subsubsection{Data Recovery and Verification}
+
+The YelpChi \texttt{.mat} file contains only numerical features and adjacency matrices; the raw review text is stripped during preprocessing. We recovered the text by tracing the original dataset pipeline: starting from the 67{,}395 reviews in \texttt{metadata.gz}, applying the same filtering (removing products with $>800$ reviews, yielding exactly 45{,}954 reviews), and matching the review ordering to the node indices in the \texttt{.mat} file.
+
+We verified the mapping correctness using two independent structural tests:
+\begin{itemize}
+    \item \textbf{R-U-R relation:} 1{,}000 sampled edges showed 100\% same-user match between connected nodes, confirming correct node ordering.
+    \item \textbf{Label alignment:} Reconstructed labels from the filtered metadata match the \texttt{.mat} labels exactly (6{,}677 fraud, 39{,}277 legitimate).
+\end{itemize}
+
+\subsubsection{CARE-GNN Reproduction Against the Original Paper}
+
+Table~\ref{tab:paper-comparison} compares our CARE-GNN reproduction on both datasets with the figures reported by Dou~et~al.~(2020) in their Table~3 (40\%~training data).
 
 \begin{table}[h!]
 \centering
-\begin{tabular}{|l|c|c|c|c|c|}
-\hline
-\textbf{Model} & \textbf{AUC} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
-\hline
-Relation-Aware GCN    & 0.9735 & 0.9761 & 0.8794 & 0.7561 & 0.8131 \\
-Multi-Relation GraphSAGE & 0.9735 & 0.9807 & 0.8782 & 0.8354 & 0.8562 \\
-\hline
+\begin{tabular}{llcc}
+\toprule
+\textbf{Dataset} & \textbf{Source} & \textbf{AUC} & \textbf{Recall} \\
+\midrule
+\multirow{2}{*}{Yelp}   & Original paper (40\%~train) & 0.7570 & 0.7192 \\
+                        & Our reproduction            & 0.7660 & 0.7015 \\
+\midrule
+\multirow{2}{*}{Amazon} & Original paper (40\%~train) & 0.8973 & 0.8848 \\
+                        & Our reproduction            & 0.9398 & 0.8925 \\
+\bottomrule
 \end{tabular}
-\caption{Test set results for baseline GNN models on Amazon.}
-\label{tab:baseline-results}
+\caption{CARE-GNN reproduction against the original paper~\cite{dou2020enhancing}.}
+\label{tab:paper-comparison}
 \end{table}
 
 \noindent
-Both models achieve AUC = 0.9735, indicating strong discriminative ability. GraphSAGE outperforms GCN on recall (+0.079) and F1 (+0.043) while maintaining comparable precision. This improvement arises from GraphSAGE's mean aggregator, which better distributes neighbourhood information across two layers compared to GCN's single-hop spectral convolution, allowing the model to capture more positive instances.
+Our YelpChi reproduction (AUC 0.7660) is within 1\,pp of the paper's reported value (0.7570); the minor difference is attributable to different train/validation split ratios and random seeds. The Amazon reproduction exceeds the paper by +4.25\,pp, likely due to implementation improvements including cached feature loading and consistent L1 normalisation.
 
-\subsubsection*{Confusion Matrices}
+\subsubsection{Text Embedding Results}
 
+We generated 384-dimensional sentence embeddings from the raw review text using \texttt{all-MiniLM-L6-v2} with L2 normalisation, then integrated them into the CAPN policy-network state vector via projection. Three progressive architectural improvements were evaluated:
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Val AUC} & \textbf{Test AUC} & \textbf{Test F1} & \textbf{Test AP} \\
+\midrule
+CARE-GNN (original RL)                     & 0.7705 & 0.7660 & 0.6098 & 0.3779 \\
+CAPN (no text)                             & \textbf{0.7759} & \textbf{0.7727} & 0.5858 & \textbf{0.3997} \\
+\midrule
+CAPN + text (16-dim projection)            & 0.7744 & 0.7714 & 0.5901 & 0.3972 \\
+CAPN + text (64-dim deep projection)       & 0.7737 & 0.7703 & 0.5851 & 0.3938 \\
+CAPN + text + soft attention               & 0.7738 & 0.7698 & 0.5630 & 0.3903 \\
+CAPN + text + soft attn + RL improvements  & 0.7734 & 0.7694 & 0.5829 & 0.3872 \\
+\bottomrule
+\end{tabular}
+\caption{Text-embedding integration results on YelpChi. Three progressive improvements were attempted: deeper projection (Phase~1), soft-attention neighbour weighting (Phase~2), and advantage-normalised REINFORCE with entropy regularisation (Phase~3).}
+\label{tab:yelp-text-results}
+\end{table}
+
+\paragraph{Phase 1: Projection bottleneck.}
+The initial 384$\to$16 projection reduces dimensionality by 96\%, potentially destroying semantic information. We increased the projection to 64 dimensions using a 3-layer MLP with LayerNorm (384$\to$256$\to$128$\to$64), increasing the text signal from 30\% to 63\% of the policy state vector. Result: no improvement (Val AUC 0.7737 vs.\ 0.7744).
+
+\paragraph{Phase 2: Soft-attention neighbour weighting.}
+The original hard top-$K$ filtering (threshold controls only neighbour count) gives the policy network a weak control lever. We replaced it with soft-attention weighting, where the threshold acts as a temperature: $w_i = \mathrm{softmax}(-d_i / \tau)$, allowing the policy to control \emph{how} neighbours are weighted, not just \emph{how many}. Result: no improvement (Val AUC 0.7738 vs.\ 0.7737).
+
+\paragraph{Phase 3: Stronger policy learning.}
+Vanilla REINFORCE with scalar batch reward is known to have high variance. We added: (1)~advantage normalisation via running EMA of reward mean and standard deviation, (2)~entropy regularisation to prevent threshold collapse, and (3)~increased policy learning rate ($10^{-3}\to 3\cdot 10^{-3}$) and loss weight ($\lambda_\pi$ $0.1\to 0.3$). Result: no improvement (Val AUC 0.7734 vs.\ 0.7738).
+
+\subsubsection{Analysis}
+
+All text-enhanced configurations converge to the same AUC band ($\sim 0.77$), matching the CAPN baseline without text. Four factors explain this negative result:
+
+\begin{enumerate}
+    \item \textbf{Handcrafted features already capture the spam signal.} The 32 YelpChi features include review-level statistics (rating deviation, burstiness, sentiment scores, word counts) and user/product-level aggregates that directly encode spam behavioural patterns. A sentence embedding of ``Great food, amazing service!''\ adds no information beyond what the sentiment score and word count already provide.
+    \item \textbf{Yelp spam is semantically plausible.} Unlike bot-generated text, Yelp spam reviews are often written by real users paid to inflate ratings. The text reads like genuine reviews (e.g., ``I went there this evening for dinner and it was perfect!''). The fraud signal is in the \emph{behavioural pattern} (who posted, when, how many, rating consistency), not the \emph{textual content}. General-purpose sentence embeddings (\texttt{all-MiniLM-L6-v2}) encode semantic meaning, not fraud-specific linguistic markers.
+    \item \textbf{The policy network is the wrong injection point for content features.} Text embeddings feed into the policy state, which outputs neighbour filtering thresholds. This is an indirect path: text $\to$ projection $\to$ state $\to$ threshold $\to$ neighbour selection $\to$ aggregation $\to$ prediction. Even if text contained discriminative signal, it would need to improve \emph{neighbour-selection decisions}, not classification directly.
+    \item \textbf{Contrast with the FLAG approach.} The FLAG framework~\cite{yang2025flag} uses text differently: an LLM extracts \emph{discriminative text} specifically prompted to identify fraud-relevant patterns, and text is used for \emph{semantic-similarity neighbour sampling} with end-to-end fine-tuning. Our sentence-transformer approach (frozen embeddings projected into a policy state) is fundamentally more limited.
+\end{enumerate}
+
+\paragraph{Architectural insight.} This negative result reveals a separation of concerns: the policy network benefits from \emph{structural} features (degree, neighbour overlap, feature variance) that inform neighbour selection, while \emph{content} features (text semantics) are better suited for direct classification enrichment. This insight directly motivates the Part~2 LLM pillar of the unified framework introduced in Section~\ref{sec:llm-pillar-2} of Chapter~\ref{Chapter3}: fraud-specific text scores are injected into the \emph{node features} (gated, to preserve dimensionality), not into the policy state as generic embeddings.
+
+\subsection{Experimental Protocol}
+\label{sec:yelp-main-protocol}
+
+Each of the four rows defined in the three-pillar ablation design of Chapter~\ref{Chapter3} is trained for 31 epochs on three random seeds $\{72, 73, 74\}$ using the same data splits and backbone hyperparameters documented earlier in this chapter. For Rows~2 and~4, the GNN warmup is 5 epochs and the policy ramp a further 5 epochs; the target policy weight is $\lambda_\pi^{\star} = 0.3$ (warmup-ramped per equation~\eqref{eq:lambda-pi-schedule}), the critic weight is $\lambda_c = 0.1$, the critic learning rate is $10^{-3}$, and the YelpChi priors file at \path{data/llm_priors/yelp_priors.json} seeds the policy-network relation biases and the multi-view distance mixing parameter $\gamma_r$. Text risk scores are computed in template mode (Section~\ref{sec:text-risk-scores}) from \path{data/yelp_review_texts.json} and cached at \path{llm_embeddings/yelp/text_risk_scores.pt}. No change is made to under-sampling, loss function, or evaluation code relative to the Amazon protocol.
+
+\subsection{Main Results}
+\label{sec:yelp-main-table}
+
+Table~\ref{tab:main-framework-yelp} reports the test-set metrics aggregated across the three seeds. The primary ranking metrics are AUC-ROC (matching the original CARE-GNN paper) and AP (appropriate for imbalanced classification). F1-macro captures the threshold-dependent quality used by downstream fraud pipelines.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuration} & \textbf{AUC-ROC} & \textbf{AP} & \textbf{F1-macro} \\
+\midrule
+Row 1: GNN only (CARE-GNN)          & $0.7657 \pm 0.0007$ & $0.3766 \pm 0.0038$ & $0.5948 \pm 0.0263$ \\
+Row 2: GNN + RL (CAPN-AC + priors)  & $0.7681 \pm 0.0005$ & $0.3837 \pm 0.0007$ & $0.5968 \pm 0.0109$ \\
+Row 3: GNN + LLM (text gate)        & $0.7797 \pm 0.0038$ & $0.3983 \pm 0.0146$ & $0.5927 \pm 0.0578$ \\
+\textbf{Row 4: GNN + RL + LLM (full)} & $\mathbf{0.7856 \pm 0.0022}$ & $\mathbf{0.4108 \pm 0.0052}$ & $\mathbf{0.6099 \pm 0.0565}$ \\
+\bottomrule
+\end{tabular}
+\caption{Main result -- Unified three-pillar framework on YelpChi, 3 seeds $\{72, 73, 74\}$. Best per column in bold.}
+\label{tab:main-framework-yelp}
+\end{table}
+
+\noindent
+Table~\ref{tab:main-framework-per-seed} lists per-seed AUC to make the reproducibility and variance of each row transparent.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuration} & \textbf{Seed 72} & \textbf{Seed 73} & \textbf{Seed 74} \\
+\midrule
+Row 1: GNN only               & 0.7660 & 0.7663 & 0.7647 \\
+Row 2: GNN + RL               & 0.7680 & 0.7676 & 0.7687 \\
+Row 3: GNN + LLM              & 0.7851 & 0.7764 & 0.7777 \\
+Row 4: GNN + RL + LLM (full)  & 0.7861 & 0.7881 & 0.7828 \\
+\bottomrule
+\end{tabular}
+\caption{Per-seed AUC-ROC for the unified framework ablation. The worst seed of Row~4 ($0.7828$) already exceeds the best seed of Row~1 ($0.7663$) by $+1.65$\,pp.}
+\label{tab:main-framework-per-seed}
+\end{table}
+
+\subsection{Component Contribution}
+\label{sec:yelp-component-contribution}
+
+The mean AUC increases monotonically from Row~1 through Row~4, with each step attributable to a specific design choice:
 \begin{itemize}
-    \item \textbf{GCN:} $[TN=2208,\ FP=17,\ FN=40,\ TP=124]$
-    \item \textbf{GraphSAGE:} $[TN=2206,\ FP=19,\ FN=27,\ TP=137]$
+    \item \textbf{Row 1 $\to$ Row 2 ($+0.24$\,pp).} The actor--critic CAPN policy with LLM priors replaces the heuristic bandit. The improvement is modest but extremely tight (variance drops from $\pm 0.0007$ to $\pm 0.0005$), confirming the stabilising effect of the learned value baseline.
+    \item \textbf{Row 1 $\to$ Row 3 ($+1.40$\,pp).} The TextFeatureGate applied to node features---with the original heuristic bandit unchanged---accounts for most of the gain. This is the LLM pillar's core contribution.
+    \item \textbf{Row 3 $\to$ Row 4 ($+0.59$\,pp).} Adding actor--critic RL on top of the text gate yields the full framework. Variance also shrinks from $\pm 0.0038$ to $\pm 0.0022$, indicating the RL component not only raises the mean but also regularises the LLM path.
 \end{itemize}
 
-GraphSAGE reduces false negatives from 40 to 27 (a 32.5\% reduction) at the cost of only 2 additional false positives, directly explaining its recall and F1 improvement. In fraud detection, false negatives (missed fraudsters) are typically more costly than false positives, making GraphSAGE's trade-off favourable.
+\subsection{Statistical Significance}
+\label{sec:yelp-significance}
 
-\subsubsection*{Training and Validation Curves}
+A two-sided Welch's $t$-test on the three-seed samples yields:
+\begin{itemize}
+    \item \textbf{Row 4 vs Row 1} (Full vs CARE-GNN). $\Delta\bar{x} = +1.99$\,pp, pooled $s \approx 0.0023$, $t \approx 12.4$, $p < 0.001$.
+    \item \textbf{Row 4 vs Row 2} (Full vs RL-only). $\Delta\bar{x} = +1.75$\,pp, $t \approx 11.7$, $p < 0.001$.
+    \item \textbf{Row 4 vs Row 3} (Full vs LLM-only). $\Delta\bar{x} = +0.59$\,pp, pooled $s \approx 0.0031$, $t \approx 2.7$, $p \approx 0.05$.
+\end{itemize}
 
-Figures~\ref{fig:gcn-metrics} and \ref{fig:graphsage-metrics} show the training and validation curves for Recall, AUC, and Loss. Both models converge within the first 5 epochs and remain stable thereafter, with negligible train-validation gap indicating good generalisation.
+\noindent
+The full framework significantly outperforms both the original CARE-GNN ($p < 0.001$) and the RL-only variant ($p < 0.001$). The RL-on-top-of-LLM contribution is at the border of conventional significance ($p \approx 0.05$) and would be strengthened by expanding the seed pool to five or more.
 
-\begin{figure}[h!]
+\subsection{Comparison with the Original CARE-GNN Paper}
+\label{sec:yelp-paper-compare}
+
+Dou et al.~\cite{dou2020enhancing} report two metrics for YelpChi at 40\% training data: AUC-ROC and Recall-macro. Table~\ref{tab:main-framework-paper-compare} places the unified framework alongside the paper's baselines at the comparable training fraction.
+
+\begin{table}[h!]
 \centering
-\includegraphics[width=0.48\textwidth]{Figures/GCN Train vs Val Recall.png}
-\includegraphics[width=0.48\textwidth]{Figures/GCN Train vs Val AUC.png}
-\includegraphics[width=0.48\textwidth]{Figures/GCN Train vs Val Loss.png}
-\caption{GCN training and validation curves for Recall, AUC, and Loss.}
-\label{fig:gcn-metrics}
-\end{figure}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{AUC-ROC} & \textbf{Recall} \\
+\midrule
+GCN\textsuperscript{*}                     & 0.5247 & 0.5081 \\
+GAT\textsuperscript{*}                     & 0.5624 & 0.5452 \\
+GraphSAGE\textsuperscript{*}               & 0.5400 & 0.5286 \\
+GraphConsis\textsuperscript{*}             & 0.6207 & 0.6208 \\
+CARE-GNN\textsuperscript{*}                & 0.7570 & 0.7192 \\
+\midrule
+Row 1: CARE-GNN (our reproduction)                & $0.7657 \pm 0.0007$ & $0.6987$ \\
+Row 2: GNN + RL (CAPN-AC + priors)                & $0.7681 \pm 0.0005$ & $0.6967$ \\
+Row 3: GNN + LLM (text gate)                      & $0.7797 \pm 0.0038$ & $0.6774$ \\
+\textbf{Row 4: GNN + RL + LLM (full framework)}   & $\mathbf{0.7856 \pm 0.0022}$ & $0.6923$ \\
+\bottomrule
+\end{tabular}
+\caption{YelpChi comparison against the original CARE-GNN paper~\cite{dou2020enhancing}, Table~3 (40\% training data). Starred rows are paper-reported values.}
+\label{tab:main-framework-paper-compare}
+\end{table}
 
-\begin{figure}[h!]
-\centering
-\includegraphics[width=0.48\textwidth]{Figures/Graphsage Train vs Val Recall.png}
-\includegraphics[width=0.48\textwidth]{Figures/Graphsage Train vs Val AUC.png}
-\includegraphics[width=0.48\textwidth]{Figures/Graphsage Train vs Val Loss.png}
-\caption{GraphSAGE training and validation curves for Recall, AUC, and Loss.}
-\label{fig:graphsage-metrics}
-\end{figure}
+\noindent
+The unified framework improves AUC by $+2.86$\,pp over the paper-reported CARE-GNN baseline ($0.7570 \to 0.7856$). Recall is slightly lower than the paper's $0.7192$, consistent with the AUC--recall trade-off: a better-ranking classifier selects a marginally more conservative operating point at equal probability threshold. Because the paper reports a single-run maximum rather than a multi-seed mean, the appropriate attribution of the three-pillar contribution is against our Row~1 reproduction ($0.7657$), giving the $+1.99$\,pp we report.
+
+\paragraph{Evaluation-protocol differences.} Two differences between our protocol and the paper's are worth flagging:
+\begin{enumerate}
+    \item \textbf{Metric coverage.} The original paper reports AUC-ROC and Recall only. We additionally report AP, F1-macro, Precision, and the auxiliary Label-AUC produced by the CAPN label predictor. These additional metrics are consistent with recent graph-fraud-detection literature and expose the precision--recall trade-off relevant for deployment.
+    \item \textbf{Seed discipline.} The paper reports the best epoch of a single training run. We report the mean over three seeds with the checkpoint selected by validation AUC per run. This yields a lower but more honest estimate of deployable performance.
+\end{enumerate}
+
+\subsection{Findings}
+\label{sec:yelp-findings}
+
+The YelpChi evaluation yields four findings:
+
+\begin{enumerate}
+    \item \textbf{The three-pillar combination significantly outperforms CARE-GNN} on YelpChi, with $+1.99$\,pp AUC and $p < 0.001$ across three seeds. All three pillars contribute positively and the combination exceeds the best two-pillar configuration.
+    \item \textbf{The LLM pillar is the dominant contributor} ($+1.40$\,pp mean AUC from the text gate alone). Fraud-specific textual scores---\textit{generic\_language}, \textit{detail\_authenticity}, \textit{promotional\_tone}, \textit{copy\_paste\_signal}, \textit{behavioral\_anomaly}, \textit{sentiment\_mismatch}---capture spam signals that the 32 behavioural features do not.
+    \item \textbf{The RL pillar remains necessary} even when LLM features are present ($+0.59$\,pp mean AUC from Row~3 to Row~4). Actor--critic policy optimisation uses the richer state vector (including textual scores) to produce better per-node filtering thresholds than the heuristic bandit can achieve.
+    \item \textbf{TextFeatureGate resolves the feature-level enrichment failure} observed on Amazon (Study~A8). The learnable sigmoid-gated injection preserves the node-feature dimensionality while letting training decide how much of the text signal to admit. The gate starts at $\sigma(g) \approx 0.12$, so the initial network behaviour is close to CARE-GNN and the model is free to \emph{unlearn} the text contribution where it is unhelpful.
+\end{enumerate}
+
+\paragraph{Thesis position.} On the Amazon dataset the three pillars are individually near-redundant because the 25 handcrafted features already yield AUC $\approx 0.94$. On the more challenging YelpChi dataset the same three pillars combine to deliver a statistically significant improvement over the published CARE-GNN baseline. This validates the design hypothesis: \emph{each pillar addresses a distinct failure mode, and the pillars compose additively when their integration interfaces (gated features, actor--critic advantage, compact state enrichment) are engineered to avoid information loss}. The unified framework is therefore the recommended configuration for heterogeneous review-graph fraud detection under realistic conditions where textual content is available.
 
 
-\subsection{Supporting Evidence: GNN + RL Pillars on Amazon (A1)}
+\section{Supporting Evidence: Amazon Component Ablations (A1--A9)}
+\label{sec:amazon-ablations}
+
+This section reports the nine component-level ablations defined in Section~\ref{sec:ablation} of Chapter~\ref{Chapter3}. Their role is not to argue for the unified framework as a whole (the main result lives in Section~\ref{sec:results-unified}) but to \emph{attribute} individual design decisions to measurable changes in fraud-detection performance on the Amazon dataset. Each study isolates a single design choice while holding all other hyperparameters at their defaults. All results below use a single seed~$=72$.
+
+\subsection{A1: CAPN vs Inherited Bandit}
 \label{sec:results-a1}
 
 Table~\ref{tab:capn-main-results} compares CARE-GNN with CAPN on the Amazon dataset. Both models use the same GNN backbone and preprocessing; the only difference is the RL module and label predictor design.
@@ -127,11 +315,7 @@ CAPN outperforms CARE-GNN on the primary ranking metrics: +0.47pp AUC and +0.33p
 Note that while the baseline GCN and GraphSAGE achieve higher AUC (0.9735), they operate on a simpler problem formulation: they do not model camouflage resistance. CARE-GNN and CAPN accept a raw adjacency representation and must internally learn to filter camouflaged connections, which is a harder task. Their advantage lies in AUC on the \textit{fraud-specific} evaluation setting, where they also model per-relation dynamics and provide explainable threshold decisions.
 
 
-\subsection{Supporting Evidence: Component Ablations on Amazon (A2--A9)}
-
-The following subsections report the seven ablation studies (A1--A7), each isolating a specific design decision. All results are on the Amazon test set.
-
-\subsubsection{A2: Label Predictor Isolation}
+\subsection{A2: Label Predictor Isolation}
 
 This study isolates the contribution of the MLP label predictor from the policy network by testing three configurations.
 
@@ -153,7 +337,7 @@ MLP predictor + policy (CAPN) & \textbf{0.9445} & \textbf{0.8568} & 0.8994 & \te
 \noindent
 The MLP predictor alone \emph{hurts} GNN AUC by $-0.77$pp compared to the linear baseline. This is because the stronger MLP changes the label-distance distribution that the original Bernoulli bandit was calibrated for, destabilising its threshold updates. However, when the policy network is added (full CAPN), GNN AUC not only recovers but \emph{exceeds} the linear baseline by +0.47pp. This demonstrates a critical interaction effect: the policy network is necessary to fully exploit the MLP predictor. Label AUC improves dramatically with the MLP (+5.26pp over linear baseline), confirming that the auxiliary classifier benefits substantially from increased capacity.
 
-\subsubsection{A3: Reward Shaping}
+\subsection{A3: Reward Shaping}
 
 This study evaluates whether the three-component shaped reward improves over the original binary reward, and which component contributes most.
 
@@ -176,7 +360,7 @@ Shaped -- accuracy only   & \textbf{0.9445} & \textbf{0.8572} & 0.8938 & 0.8973 
 \noindent
 All three CAPN reward variants outperform the binary reward baseline on AUC and AP. The combined shaped reward and accuracy-only variant tie for best AUC (0.9445), while distance-only is 0.0002 lower. The AUC range across all shaped variants is only 0.0002, indicating that the policy network benefits from any continuous reward signal regardless of its specific composition. The key improvement over the binary reward is continuity: the shaped reward informs the policy of the \emph{magnitude} of improvement, not just direction, enabling more stable gradient updates via REINFORCE.
 
-\subsubsection{A4: LLM Prior Initialisation}
+\subsection{A4: LLM Prior Initialisation}
 
 This study evaluates whether LLM-derived priors for policy network bias initialisation and multi-view distance mixing parameters improve performance.
 
@@ -197,7 +381,7 @@ CAPN (LLM priors)  & \textbf{0.9453} & \textbf{0.8587} & \textbf{0.9038} & \text
 \noindent
 LLM priors provide small but consistent improvements across all metrics: +0.08pp AUC, +0.19pp AP, +0.44pp F1, and +0.81pp Precision. The precision gain is the most notable: the LLM correctly identifies which relations are most susceptible to camouflage (UVU with its text-similarity edges), initialising the policy to apply more aggressive filtering for high-risk relations from the start of training. This reduces false positives without sacrificing recall.
 
-\subsubsection{A5: Policy Loss Weight Sensitivity}
+\subsection{A5: Policy Loss Weight Sensitivity}
 
 This sensitivity study evaluates CAPN's robustness to the policy loss weight $\lambda_\pi$ over a 50$\times$ range.
 
@@ -220,7 +404,7 @@ This sensitivity study evaluates CAPN's robustness to the policy loss weight $\l
 \noindent
 CAPN is highly robust to the policy loss weight: AUC varies by only 0.0004 across a 50$\times$ range ($\lambda_\pi \in \{0.01, 0.05, 0.1, 0.5\}$). This is a practically important finding: it means that practitioners do not need careful tuning of this hyperparameter. The robustness arises from the separate gradient clipping strategy (GNN parameters clipped at 1.0, policy parameters at 5.0), which normalises the effective gradient scale regardless of $\lambda_\pi$.
 
-\subsubsection{A6: LLM Semantic State Enrichment (v1 -- Sentence-Transformer)}
+\subsection{A6: LLM Semantic State Enrichment (v1 -- Sentence-Transformer)}
 
 This study evaluates whether augmenting the policy state vector with sentence-transformer embeddings of node relational profiles provides useful signal.
 
@@ -243,7 +427,7 @@ The v1 enrichment pipeline---which converts node relational statistics to text, 
 
 The root cause is a \textbf{lossy round-trip}: the sentence-transformer re-encodes precise numerical statistics (e.g.\ degree = 23 vs.\ degree = 150) through a text bottleneck trained on natural language, not graph statistics. This destroys the numerical relationships that are directly present in the base state vector, effectively adding noise to the policy input. This failure motivates the redesigned v2 pipeline evaluated in Study A7.
 
-\subsubsection{A7: LLM Reasoning State Enrichment (v2 -- Claude Reasoning Scores)}
+\subsection{A7: LLM Reasoning State Enrichment (v2 -- Claude Reasoning Scores)}
 
 This study evaluates the redesigned enrichment pipeline that replaces the sentence-transformer with direct numerical structural features and Claude LLM reasoning scores. Four configurations are compared in a $2 \times 2$ design.
 
@@ -278,7 +462,7 @@ When the 26 structural features and 6 reasoning scores are concatenated (32 dime
 \paragraph{v2 reasoning outperforms v1 sentence-transformer.}
 Comparing CAPN + reasoning (AUC 0.9450) with the v1 LLM state (AUC 0.9426) shows a +0.24pp AUC improvement. The reasoning-score approach succeeds because it provides compact, fraud-relevant assessments (6 values with clear semantic meaning) rather than a high-dimensional projection of text embeddings. This result confirms that \emph{how} LLM knowledge is integrated matters as much as \emph{whether} it is integrated.
 
-\subsubsection{A8: Feature-Level Enrichment}
+\subsection{A8: Feature-Level Enrichment}
 \label{sec:a8-feature}
 
 This study evaluates whether concatenating reasoning scores directly into the GNN's node feature vector---rather than injecting them only into the RL state---improves performance. The reasoning scores are scaled to match the magnitude of the L1-normalised features before concatenation, producing a 31-dimensional input (25 original + 6 reasoning).
@@ -303,7 +487,7 @@ Feature-level enrichment consistently degrades GNN performance: $-0.59$pp AUC, $
 
 The failure has a clear explanation: the Amazon dataset has only 25 features, several of which are highly discriminative (feature~19 has point-biserial $r = 0.658$ with the fraud label). Concatenating 6 additional features increases the GNN's weight matrix from $25 \times 64$ to $31 \times 64$, adding 384 parameters (a 6.4\% increase) that must be learned from the same small training set ($\sim$205 fraud nodes per epoch under 1:1 under-sampling). The added features introduce noise that the single-layer GNN cannot overcome. This contrasts with the RL state path, where the 6 reasoning scores are compressed through a projector (6 $\to$ 8) before entering the policy network, which has a larger effective training signal (per-batch threshold feedback via REINFORCE).
 
-\subsubsection{A9: Combined LLM Components}
+\subsection{A9: Combined LLM Components}
 
 This study evaluates whether combining LLM priors with other enrichment modes produces additive gains. Five configurations are tested, including the ``full framework'' with all three LLM components active.
 
@@ -327,7 +511,8 @@ CAPN full (feat+state+priors) & 0.9394 & 0.8498 & 0.8669 & 0.8511 & 0.8876 \\
 \noindent
 LLM priors alone remain the best configuration. Combining priors with feature-level enrichment does not produce additive gains; instead, the feature enrichment damage dominates. The ``full framework'' configuration (all three LLM components active) achieves AUC 0.9394, which is $-0.59$pp below priors alone. This confirms that on the Amazon dataset, the optimal LLM integration strategy is \textbf{LLM priors for policy initialisation} combined with \textbf{template reasoning scores in the RL state}, without modifying the GNN's input features.
 
-\subsection{Summary of Amazon Component Ablations}
+\subsection{Summary Table of Amazon Ablations}
+\label{sec:amazon-summary-table}
 
 Table~\ref{tab:full-summary} provides a complete summary of all configurations evaluated on the Amazon dataset.
 
@@ -382,7 +567,8 @@ Best & \textbf{CAPN + LLM priors}     & \textbf{0.9453} & \textbf{0.8587} & \tex
 \label{tab:full-summary}
 \end{table}
 
-\subsection{Key Findings from Amazon Component Ablations}
+\subsection{Key Findings from Amazon Ablations}
+\label{sec:amazon-key-findings}
 
 The Amazon evaluation yields eight primary findings:
 
@@ -404,208 +590,56 @@ The Amazon evaluation yields eight primary findings:
     \item \textbf{The v1 sentence-transformer approach fails for a different reason than v3 feature enrichment.} The v1 approach ($-0.19$pp AUC) fails due to lossy text encoding that destroys numerical precision. The v3 feature-level approach ($-0.59$pp AUC) fails due to dimensionality increase in a data-scarce setting. Both confirm that effective LLM integration requires \emph{semantic compression}---distilling LLM knowledge into a compact, low-dimensional representation---rather than expanding the feature or embedding space.
 \end{enumerate}
 
-\subsection{Motivating Study: Yelp Text-Embedding Experiments}
-\label{sec:yelp-text-experiments}
 
-The Amazon experiments (A1--A9) evaluated CAPN using handcrafted features and LLM-generated structural scores. A natural question is whether \emph{raw textual content}---the actual review text---can further improve fraud detection when integrated into the CAPN architecture. To investigate this, we conduct experiments on the YelpChi dataset, where we recovered the original review text for all 45,954 nodes and generated sentence embeddings using \texttt{all-MiniLM-L6-v2}.
+\section{Reference Baselines on Amazon (GCN, GraphSAGE)}
+\label{sec:amazon-baselines}
 
-\subsubsection{Data Recovery and Verification}
+For context, we also report results for two simpler multi-relation GNN baselines on Amazon---the Relation-Aware GCN and Multi-Relation GraphSAGE described in Section~\ref{sec:baselines} of Chapter~\ref{Chapter3}. These baselines are \emph{not} part of the unified framework: they do not model camouflage resistance, do not perform neighbour filtering, and do not use any RL or LLM signal. Their role is to situate the backbone's standalone strength and to quantify what fraction of the final performance is attributable to the multi-relation signal alone, before any of the three pillars is added.
 
-The YelpChi \texttt{.mat} file contains only numerical features and adjacency matrices; the raw review text is stripped during preprocessing. We recovered the text by tracing the original dataset pipeline: starting from the 67,395 reviews in \texttt{metadata.gz}, applying the same filtering (removing products with $>800$ reviews, yielding exactly 45,954 reviews), and matching the review ordering to the node indices in the \texttt{.mat} file.
+Table~\ref{tab:baseline-results} reports the test-set results.
 
-We verified the mapping correctness using two independent structural tests:
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{Model} & \textbf{AUC} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \
+\hline
+Relation-Aware GCN       & 0.9735 & 0.9761 & 0.8794 & 0.7561 & 0.8131 \
+Multi-Relation GraphSAGE & 0.9735 & 0.9807 & 0.8782 & 0.8354 & 0.8562 \
+\hline
+\end{tabular}
+\caption{Test-set results for the reference-baseline GNN models on Amazon. Both operate on a simpler problem formulation than CARE-GNN/CAPN (no camouflage resistance, no RL filtering).}
+\label{tab:baseline-results}
+\end{table}
+
+\noindent
+Both baselines achieve AUC $= 0.9735$. GraphSAGE outperforms GCN on recall ($+0.079$) and F1 ($+0.043$) while maintaining comparable precision; this reflects GraphSAGE's two-layer mean aggregation distributing neighbourhood information more effectively than GCN's single-hop spectral convolution.
+
+\paragraph{Confusion matrices.}
 \begin{itemize}
-    \item \textbf{R-U-R relation:} 1,000 sampled edges showed 100\% same-user match between connected nodes, confirming correct node ordering.
-    \item \textbf{Label alignment:} Reconstructed labels from the filtered metadata match the \texttt{.mat} labels exactly (6,677 fraud, 39,277 legitimate).
+    \item \textbf{GCN:} $[TN=2208,\; FP=17,\; FN=40,\; TP=124]$.
+    \item \textbf{GraphSAGE:} $[TN=2206,\; FP=19,\; FN=27,\; TP=137]$.
 \end{itemize}
+GraphSAGE reduces false negatives from 40 to 27 (a 32.5\% reduction) at the cost of only 2 additional false positives---a favourable trade-off in fraud detection where false negatives (missed fraudsters) are typically more costly than false positives.
 
-\subsubsection{Comparison with Original Paper}
+\paragraph{Training and validation curves.} Figures~\ref{fig:gcn-metrics} and~\ref{fig:graphsage-metrics} show the training and validation curves for Recall, AUC, and Loss. Both models converge within the first five epochs and remain stable thereafter, with negligible train--validation gap indicating good generalisation.
 
-Table~\ref{tab:paper-comparison} compares our CARE-GNN reproduction with the results reported in the original paper \cite{dou2020enhancing} (Table~3, 40\% training data).
-
-\begin{table}[h!]
+\begin{figure}[h!]
 \centering
-\begin{tabular}{llcc}
-\toprule
-\textbf{Dataset} & \textbf{Source} & \textbf{AUC} & \textbf{Recall} \\
-\midrule
-\multirow{2}{*}{Yelp} & Original paper (40\% train) & 0.7570 & 0.7192 \\
-                       & Our reproduction            & 0.7660 & 0.7015 \\
-\midrule
-\multirow{2}{*}{Amazon} & Original paper (40\% train) & 0.8973 & 0.8848 \\
-                         & Our reproduction            & 0.9398 & 0.8925 \\
-\bottomrule
-\end{tabular}
-\caption{CARE-GNN reproduction comparison with the original paper \cite{dou2020enhancing}.}
-\label{tab:paper-comparison}
-\end{table}
+\includegraphics[width=0.48\textwidth]{Figures/GCN Train vs Val Recall.png}
+\includegraphics[width=0.48\textwidth]{Figures/GCN Train vs Val AUC.png}
+\includegraphics[width=0.48\textwidth]{Figures/GCN Train vs Val Loss.png}
+\caption{GCN training and validation curves for Recall, AUC, and Loss.}
+\label{fig:gcn-metrics}
+\end{figure}
 
-\noindent
-Our Yelp reproduction (AUC 0.7660) is within 1pp of the paper's reported value (0.7570), with the minor difference attributable to different train/validation split ratios and random seeds. The Amazon reproduction exceeds the paper by +4.25pp, likely due to implementation improvements including cached feature loading and consistent L1 normalisation.
-
-\subsubsection{Text Embedding Results}
-
-We generated 384-dimensional sentence embeddings from the raw review text using \texttt{all-MiniLM-L6-v2} with L2 normalisation, then integrated them into the CAPN policy network state vector via projection. Three progressive architectural improvements were evaluated:
-
-\begin{table}[h!]
+\begin{figure}[h!]
 \centering
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Model} & \textbf{Val AUC} & \textbf{Test AUC} & \textbf{Test F1} & \textbf{Test AP} \\
-\midrule
-CARE-GNN (original RL)                     & 0.7705 & 0.7660 & 0.6098 & 0.3779 \\
-CAPN (no text)                             & \textbf{0.7759} & \textbf{0.7727} & 0.5858 & \textbf{0.3997} \\
-\midrule
-CAPN + text (16-dim projection)            & 0.7744 & 0.7714 & 0.5901 & 0.3972 \\
-CAPN + text (64-dim deep projection)       & 0.7737 & 0.7703 & 0.5851 & 0.3938 \\
-CAPN + text + soft attention               & 0.7738 & 0.7698 & 0.5630 & 0.3903 \\
-CAPN + text + soft attn + RL improvements  & 0.7734 & 0.7694 & 0.5829 & 0.3872 \\
-\bottomrule
-\end{tabular}
-\caption{Text embedding integration results on the Yelp dataset. Three progressive improvements: deeper projection (Phase~1), soft attention neighbour weighting (Phase~2), and advantage-normalised REINFORCE with entropy regularisation (Phase~3).}
-\label{tab:yelp-text-results}
-\end{table}
+\includegraphics[width=0.48\textwidth]{Figures/Graphsage Train vs Val Recall.png}
+\includegraphics[width=0.48\textwidth]{Figures/Graphsage Train vs Val AUC.png}
+\includegraphics[width=0.48\textwidth]{Figures/Graphsage Train vs Val Loss.png}
+\caption{GraphSAGE training and validation curves for Recall, AUC, and Loss.}
+\label{fig:graphsage-metrics}
+\end{figure}
 
-\paragraph{Phase 1: Projection bottleneck.}
-The initial 384$\to$16 projection reduces dimensionality by 96\%, potentially destroying semantic information. We increased the projection to 64 dimensions using a 3-layer MLP with LayerNorm (384$\to$256$\to$128$\to$64), increasing the text signal from 30\% to 63\% of the policy state vector. Result: no improvement (Val AUC 0.7737 vs.\ 0.7744).
-
-\paragraph{Phase 2: Soft attention neighbour weighting.}
-The original hard top-$K$ filtering (threshold controls only neighbour count) gives the policy network a weak control lever. We replaced it with soft attention weighting, where the threshold acts as a temperature parameter: $w_i = \mathrm{softmax}(-d_i / \tau)$, allowing the policy to control \emph{how} neighbours are weighted, not just \emph{how many}. Result: no improvement (Val AUC 0.7738 vs.\ 0.7737).
-
-\paragraph{Phase 3: Stronger policy learning.}
-Vanilla REINFORCE with scalar batch reward is known to have high variance. We added: (1) advantage normalisation via running EMA of reward mean and standard deviation, (2) entropy regularisation to prevent threshold collapse, and (3) increased policy learning rate (1e-3$\to$3e-3) and loss weight ($\lambda_\pi$ 0.1$\to$0.3). Result: no improvement (Val AUC 0.7734 vs.\ 0.7738).
-
-\subsubsection{Analysis}
-
-All text-enhanced configurations converge to the same AUC band ($\sim$0.77), matching the CAPN baseline without text. Four factors explain this negative result:
-
-\begin{enumerate}
-    \item \textbf{Handcrafted features already capture the spam signal.} The 32 YelpChi features include review-level statistics (rating deviation, burstiness, sentiment scores, word counts) and user/product-level aggregates that directly encode spam behavioural patterns. A sentence embedding of ``Great food, amazing service!''\ adds no information beyond what the sentiment score and word count already provide.
-
-    \item \textbf{Yelp spam is semantically plausible.} Unlike bot-generated text, Yelp spam reviews are often written by real users paid to inflate ratings. The text reads like genuine reviews (e.g., ``I went there this evening for dinner and it was perfect!''). The fraud signal is in the \emph{behavioural pattern} (who posted, when, how many, rating consistency), not the \emph{textual content}. General-purpose sentence embeddings (\texttt{all-MiniLM-L6-v2}) encode semantic meaning, not fraud-specific linguistic markers.
-
-    \item \textbf{The policy network is the wrong injection point for content features.} Text embeddings feed into the policy state, which outputs neighbour filtering thresholds. This is an indirect path: text $\to$ projection $\to$ state $\to$ threshold $\to$ neighbour selection $\to$ aggregation $\to$ prediction. Even if text contained discriminative signal, it would need to improve \emph{neighbour selection decisions}, not \emph{classification} directly.
-
-    \item \textbf{Contrast with the FLAG approach.} The FLAG framework \cite{yang2025flag} uses text differently: an LLM extracts \emph{discriminative text} specifically prompted to identify fraud-relevant patterns, and text is used for \emph{semantic similarity neighbour sampling} with end-to-end fine-tuning. Our approach (frozen sentence embeddings projected into a policy state) is fundamentally more limited.
-\end{enumerate}
-
-\paragraph{Architectural insight.} This experiment reveals a separation of concerns in GNN fraud detection: the policy network benefits from \emph{structural} features (degree, neighbour overlap, feature variance) that inform neighbour selection, while \emph{content} features (text semantics) are better suited for direct classification enrichment. This finding is consistent with the Amazon results, where LLM reasoning scores---compact, fraud-relevant assessments---improved performance through the RL state, but generic high-dimensional embeddings did not.
-
-\subsection{Main Result: Unified GNN + RL + LLM Framework on YelpChi}
-\label{sec:results-unified}
-
-This section presents the \emph{primary result} of this thesis: the unified three-pillar framework evaluated on the more challenging YelpChi dataset. The preceding subsection (Yelp text embedding experiments) established that naive sentence-transformer enrichment fails on Yelp; that negative result motivates the specific design choices of the unified framework (fraud-specific text scores instead of generic embeddings, gated injection instead of concatenation, actor-critic policy optimisation instead of REINFORCE). The Amazon ablations (A1--A9) reported earlier validate the individual components in a simpler setting; the YelpChi evaluation reported here is the test that directly addresses the thesis claim---that the three pillars, combined, produce a statistically significant improvement over CARE-GNN.
-
-\subsubsection{Experimental Protocol}
-
-Each of the four rows defined in Section~\ref{sec:study-a10} is trained for $31$ epochs on three random seeds $\{72, 73, 74\}$ using the same data split and hyperparameters documented earlier in this chapter. For Rows~2 and~4, the GNN warmup is five epochs and the policy ramp is a further five epochs; the policy weight is $\lambda_\pi = 0.3$ (warmup-ramped), the critic weight is $\lambda_c = 0.1$, the critic learning rate is $10^{-3}$, and the Yelp priors file at \path{data/llm_priors/yelp_priors.json} seeds the policy-network relation biases and the multi-view distance mixing parameter $\gamma_r$. Text risk scores are computed in template mode from \path{data/yelp_review_texts.json} and cached at \path{llm_embeddings/yelp/text_risk_scores.pt}. No change is made to under-sampling, loss function, or evaluation code relative to the Amazon protocol.
-
-\subsubsection{Main Results}
-
-Table~\ref{tab:main-framework-yelp} reports the test-set metrics aggregated across the three seeds. The primary ranking metrics are AUC-ROC (matching the original CARE-GNN paper) and AP (appropriate for imbalanced classification). F1-macro captures the threshold-dependent quality used by downstream fraud pipelines.
-
-\begin{table}[h!]
-\centering
-\begin{tabular}{lccc}
-\toprule
-\textbf{Configuration} & \textbf{AUC-ROC} & \textbf{AP} & \textbf{F1-macro} \\
-\midrule
-Row 1: GNN only (CARE-GNN) & $0.7657 \pm 0.0007$ & $0.3766 \pm 0.0038$ & $0.5948 \pm 0.0263$ \\
-Row 2: GNN + RL (CAPN-AC + priors) & $0.7681 \pm 0.0005$ & $0.3837 \pm 0.0007$ & $0.5968 \pm 0.0109$ \\
-Row 3: GNN + LLM (text gate) & $0.7797 \pm 0.0038$ & $0.3983 \pm 0.0146$ & $0.5927 \pm 0.0578$ \\
-\textbf{Row 4: GNN + RL + LLM (full)} & $\mathbf{0.7856 \pm 0.0022}$ & $\mathbf{0.4108 \pm 0.0052}$ & $\mathbf{0.6099 \pm 0.0565}$ \\
-\bottomrule
-\end{tabular}
-\caption{Main result -- Unified three-pillar framework on YelpChi, 3 seeds (72, 73, 74). Best value per column in bold.}
-\label{tab:main-framework-yelp}
-\end{table}
-
-\noindent
-Table~\ref{tab:main-framework-per-seed} lists per-seed AUC to make the reproducibility and variance of each row transparent.
-
-\begin{table}[h!]
-\centering
-\begin{tabular}{lccc}
-\toprule
-\textbf{Configuration} & \textbf{Seed 72} & \textbf{Seed 73} & \textbf{Seed 74} \\
-\midrule
-Row 1: GNN only               & 0.7660 & 0.7663 & 0.7647 \\
-Row 2: GNN + RL               & 0.7680 & 0.7676 & 0.7687 \\
-Row 3: GNN + LLM              & 0.7851 & 0.7764 & 0.7777 \\
-Row 4: GNN + RL + LLM (full)  & 0.7861 & 0.7881 & 0.7828 \\
-\bottomrule
-\end{tabular}
-\caption{Per-seed AUC-ROC for the unified framework ablation. The worst seed of Row 4 ($0.7828$) already exceeds the best seed of Row 1 ($0.7663$) by $+1.65$pp.}
-\label{tab:main-framework-per-seed}
-\end{table}
-
-\subsubsection{Component Contribution}
-
-The mean AUC increases monotonically from Row 1 through Row 4, with each step attributable to a specific design choice:
-\begin{itemize}
-    \item \textbf{Row 1 $\to$ Row 2 ($+0.24$pp).} The actor-critic CAPN policy with LLM priors replaces the heuristic RL module. The improvement is modest but extremely tight (variance drops from $\pm 0.0007$ to $\pm 0.0005$), confirming the stabilising effect of the learned value baseline.
-    \item \textbf{Row 1 $\to$ Row 3 ($+1.40$pp).} The TextFeatureGate applied to node features---with the original heuristic RL unchanged---accounts for most of the gain. This is the LLM pillar's core contribution.
-    \item \textbf{Row 3 $\to$ Row 4 ($+0.59$pp).} Adding actor-critic RL on top of the text gate yields the full framework. Variance also shrinks from $\pm 0.0038$ to $\pm 0.0022$, indicating the RL component not only raises the mean but regularises the LLM path.
-\end{itemize}
-
-\subsubsection{Statistical Significance}
-
-A two-sided Welch's $t$-test on the three-seed samples yields:
-\begin{itemize}
-    \item \textbf{Row 4 vs Row 1 (Full vs CARE-GNN).} $\Delta\bar{x} = +1.99$pp, pooled $s \approx 0.0023$, $t \approx 12.4$, $p < 0.001$.
-    \item \textbf{Row 4 vs Row 2 (Full vs RL-only).} $\Delta\bar{x} = +1.75$pp, $t \approx 11.7$, $p < 0.001$.
-    \item \textbf{Row 4 vs Row 3 (Full vs LLM-only).} $\Delta\bar{x} = +0.59$pp, pooled $s \approx 0.0031$, $t \approx 2.7$, $p \approx 0.05$.
-\end{itemize}
-
-\noindent
-The full framework significantly outperforms both the original CARE-GNN ($p < 0.001$) and the RL-only variant ($p < 0.001$). The RL-on-top-of-LLM contribution is at the border of conventional significance ($p \approx 0.05$) and would be strengthened by expanding the seed pool to five or more.
-
-\subsubsection{Comparison with the Original CARE-GNN Paper}
-
-Dou et al.~\cite{dou2020enhancing} report two metrics for YelpChi at 40\% training data: AUC-ROC and Recall-macro. Table~\ref{tab:main-framework-paper-compare} places the unified framework alongside the paper's baselines at the comparable training fraction.
-
-\begin{table}[h!]
-\centering
-\begin{tabular}{lcc}
-\toprule
-\textbf{Model} & \textbf{AUC-ROC} & \textbf{Recall} \\
-\midrule
-GCN\textsuperscript{*}                     & 0.5247 & 0.5081 \\
-GAT\textsuperscript{*}                     & 0.5624 & 0.5452 \\
-GraphSAGE\textsuperscript{*}               & 0.5400 & 0.5286 \\
-GraphConsis\textsuperscript{*}             & 0.6207 & 0.6208 \\
-CARE-GNN\textsuperscript{*}                & 0.7570 & 0.7192 \\
-\midrule
-Row 1: CARE-GNN (our reproduction)                & $0.7657 \pm 0.0007$ & $0.6987$ \\
-Row 2: GNN + RL (CAPN-AC + priors)                & $0.7681 \pm 0.0005$ & $0.6967$ \\
-Row 3: GNN + LLM (text gate)                      & $0.7797 \pm 0.0038$ & $0.6774$ \\
-\textbf{Row 4: GNN + RL + LLM (full framework)}   & $\mathbf{0.7856 \pm 0.0022}$ & $0.6923$ \\
-\bottomrule
-\end{tabular}
-\caption{YelpChi comparison with the original CARE-GNN paper~\cite{dou2020enhancing}, Table~3 (40\% training data). Starred rows are paper-reported values.}
-\label{tab:main-framework-paper-compare}
-\end{table}
-
-\noindent
-The unified framework improves AUC by $+2.86$pp over the paper-reported CARE-GNN baseline ($0.7570 \to 0.7856$). Recall is slightly lower than the paper's $0.7192$, consistent with the AUC/recall trade-off: a better-ranking classifier selects a marginally more conservative operating point at equal probability threshold. Because the paper reports a single-run maximum rather than a multi-seed mean, the appropriate comparison is against our Row 1 reproduction ($0.7657$), and the improvement attributable to the three-pillar framework is the $+1.99$pp we report.
-
-\subsubsection{Evaluation Metrics}
-
-We note two differences between our evaluation protocol and the CARE-GNN paper's:
-\begin{enumerate}
-    \item \textbf{Metric coverage.} The original paper reports AUC-ROC and Recall only. We additionally report AP, F1-macro, precision, and the auxiliary Label AUC produced by the CAPN label predictor. These additional metrics are consistent with recent graph fraud detection literature and expose the precision-recall trade-off relevant for deployment.
-    \item \textbf{Seed discipline.} The paper reports the best epoch of a single training run. We report the mean over three seeds with the checkpoint selected by validation AUC per run. This gives a lower but more honest estimate of deployable performance.
-\end{enumerate}
-
-\subsubsection{Findings}
-
-The unified framework evaluation yields four findings:
-
-\begin{enumerate}
-    \item \textbf{The three-pillar combination significantly outperforms CARE-GNN} on YelpChi, with $+1.99$pp AUC and $p < 0.001$ across three seeds. All three pillars contribute positively and the combination exceeds the best two-pillar configuration.
-    \item \textbf{The LLM pillar is the dominant contributor} ($+1.40$pp mean AUC from the text gate alone). Fraud-specific textual scores---\textit{generic\_language}, \textit{detail\_authenticity}, \textit{promotional\_tone}, \textit{copy\_paste\_signal}, \textit{behavioral\_anomaly}, \textit{sentiment\_mismatch}---capture spam signals that the 32 behavioural features do not.
-    \item \textbf{The RL pillar remains necessary} even when LLM features are present ($+0.59$pp mean AUC from Row 3 to Row 4). Actor-critic policy optimisation uses the richer state vector (including textual scores) to produce better per-node filtering thresholds than the heuristic RL can achieve.
-    \item \textbf{TextFeatureGate resolves the feature-level enrichment failure} observed on Amazon. Learnable sigmoid-gated injection preserves the node-feature dimensionality while letting training decide how much of the text signal to admit. The gate starts at a sigmoid value near $0.12$ so the initial network behaviour is close to CARE-GNN and the model is free to \emph{unlearn} the text contribution where it is unhelpful.
-\end{enumerate}
-
-\paragraph{Thesis position.} On the Amazon dataset the three pillars are individually near-redundant because 25 handcrafted features already yield AUC $\approx 0.94$. On the more challenging YelpChi dataset the same three pillars combine to deliver a statistically significant improvement over the published CARE-GNN baseline. This validates the design hypothesis: \emph{each pillar addresses a distinct failure mode, and the pillars compose additively when their integration interfaces (gated features, actor-critic advantage, compact state enrichment) are engineered to avoid information loss}. The unified framework is therefore the recommended configuration for heterogeneous review-graph fraud detection under realistic conditions where textual content is available.
+\paragraph{Interpretation.} These AUCs (both $0.9735$) are \emph{higher} than the CARE-GNN/CAPN numbers reported in Section~\ref{sec:amazon-ablations} (AUC $\approx 0.94$). The gap does not mean GCN or GraphSAGE are better models---it means the two baselines solve a simpler problem. CARE-GNN and CAPN accept raw adjacency information and must internally learn to filter camouflaged connections; the baselines work on preprocessed, top-$p$-filtered or row-normalised adjacency matrices that remove that challenge a priori. The unified framework's advantage over these baselines is not an Amazon AUC race---it is the ability to generalise to YelpChi (where the baselines' structural signal collapses to AUC $\approx 0.54$--$0.62$, cf.\ Table~\ref{tab:main-framework-paper-compare}) and to provide explainable per-node threshold decisions that the baselines do not.

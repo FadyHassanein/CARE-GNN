@@ -1,0 +1,359 @@
+\chapter{Literature Review}
+\lhead{\emph{Chapter 2}}
+
+This chapter surveys the body of knowledge that underpins the proposed framework for
+graph-based fraud detection with reinforcement learning and large language model
+assistance. The review is organized into six thematic areas: the fraud detection
+landscape and its core challenges; classical and machine learning approaches; deep
+learning methods; graph-based and graph neural network (GNN) approaches; reinforcement
+learning applied to graphs; and the emerging integration of large language models with
+graph learning. Each section traces the development of the field, identifies key
+limitations that motivated subsequent research, and situates the present work within the
+broader literature.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The Fraud Detection Landscape}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Fraud is a persistent and costly phenomenon that spans virtually every digital and
+financial domain. Credit card fraud, healthcare billing abuse, insurance fraud, and
+opinion spam on e-commerce platforms collectively generate losses estimated in the
+trillions of dollars annually \cite{ngai2011application}.
+\cite{bolton2002statistical} provided one of the earliest systematic surveys of
+statistical fraud detection, establishing the foundational taxonomy of supervised,
+unsupervised, and semi-supervised detection strategies. \cite{chandola2009anomaly}
+subsequently broadened this perspective with a comprehensive review of anomaly detection
+techniques across domains, noting that fraud detection is distinguished by the adaptive,
+adversarial nature of the anomalies—fraudsters continuously modify their behavior in
+response to deployed countermeasures.
+
+Three structural characteristics make fraud detection substantially harder than standard
+binary classification. First, class imbalance is extreme: fraudulent events typically
+represent fewer than one percent of all transactions \cite{dalpozzolo2015calibrating}.
+Second, the cost of errors is asymmetric; missing a fraudulent transaction (false
+negative) generally incurs far greater cost than a false alarm (false positive)
+\cite{baesens2015fraud}. Third, fraudsters exhibit \emph{camouflage} behavior,
+deliberately manipulating observable features and social connections to resemble
+legitimate entities \cite{dou2020enhancing}. These three challenges motivate the
+transition from simple rule-based systems to increasingly sophisticated learning
+frameworks.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Classical and Machine Learning Approaches}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Rule-Based and Statistical Methods}
+
+The earliest automated fraud detection systems relied on hand-coded logical rules that
+flagged transactions exceeding fixed thresholds or matching known fraud signatures
+\cite{phua2010comprehensive}. While operationally simple, such systems are rigid:
+they cannot generalize to novel fraud patterns and require continuous manual maintenance
+as fraudster behavior evolves. Statistical methods introduced greater analytical rigor.
+\cite{bolton2002statistical} applied peer group analysis using $t$-statistics to detect
+behavioral deviations in cardholder accounts without requiring labeled fraud examples.
+Benford's Law—the prediction that leading digits in naturally occurring numerical data
+follow a logarithmic distribution—was adapted as an anomaly signal for insurance and
+financial statement fraud \cite{maher2002benford, lu2005detecting}. Although these
+approaches can operate without labels, they lack the discriminative power needed for
+precision-critical deployment.
+
+\subsection{Supervised Machine Learning}
+
+Supervised learning marked a significant step forward by enabling models to learn
+decision boundaries from labeled examples. Logistic regression became the standard
+interpretable baseline for binary fraud classification \cite{ngai2011application}.
+Decision trees and random forests demonstrated strong performance across systematic
+benchmarks; \cite{whitrow2009transaction} found that random forests outperformed
+support vector machines, $k$-nearest neighbors, and naïve Bayes on credit card fraud
+detection tasks when combined with transaction-aggregation features computed over
+rolling time windows. \cite{bhattacharyya2011data} conducted a comparative study
+confirming that support vector machines and random forests were the most consistently
+competitive classical methods, with SVMs excelling on high-dimensional feature spaces.
+Cost-sensitive learning addresses the asymmetric error cost directly: \cite{sahin2013cost}
+showed that embedding misclassification costs into a decision tree's splitting criterion
+substantially improved operational savings compared to accuracy-optimized variants.
+
+More recently, gradient boosting ensembles such as XGBoost and LightGBM have come
+to dominate competition benchmarks and production systems alike. Stacking ensembles
+combining multiple diverse base learners have achieved $F_1$-scores exceeding 88\% on
+standard credit card fraud benchmarks \cite{ileberi2024enhancing}. Despite these
+advances, classical approaches share a fundamental limitation: they operate on fixed,
+hand-crafted feature representations and cannot directly incorporate relational
+structure among entities—a critical shortcoming given that fraud is inherently a
+networked phenomenon.
+
+\subsection{Feature Engineering Strategies}
+
+The quality of input representations profoundly influences detection performance
+irrespective of model sophistication.\cite{bahnsen2016feature} introduced periodic features modeled via the
+von Mises distribution to capture cyclical spending rhythms, reporting a 13\% average
+improvement in cost savings over baseline feature sets. \cite{dalpozzolo2014learned}
+demonstrated that incorporating recent consumer behavior improves classifier performance
+by over 200\% compared to raw transaction features alone, underscoring the importance
+of recency-weighted aggregation. \cite{lucas2019towards} applied multi-perspective
+Hidden Markov Models to generate likelihood-based features from transaction sequences,
+which improved random forest performance by providing a compact summary of temporal
+dynamics. On the network side, \cite{vanvlasselaer2015apate} showed that integrating
+personalized PageRank scores computed on tripartite cardholder-transaction-merchant
+graphs substantially increased detection performance, providing an early demonstration
+that relational features complement tabular ones.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Deep Learning Approaches}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Deep learning transformed fraud detection by enabling models to learn hierarchical,
+nonlinear representations directly from raw data, reducing reliance on manual feature
+engineering.
+
+\subsection{Convolutional and Recurrent Architectures}
+
+Convolutional Neural Networks (CNNs) were adapted for fraud detection by representing
+transaction feature matrices as pseudo-images amenable to convolutional processing.
+\cite{fu2016credit} proposed an early CNN framework that extracts latent patterns from
+credit card transaction data, demonstrating performance superior to shallow classifiers
+on real-world bank data. Hybrid architectures combining CNNs with SVMs—where the CNN
+performs feature extraction and the SVM performs classification—were subsequently shown
+to outperform purely convolutional models, suggesting complementarity between
+representational and discriminative learning \cite{berhane2023hybrid}.
+
+Recurrent Neural Networks (RNNs), particularly Long Short-Term Memory (LSTM) networks,
+addressed the inherently sequential nature of financial transactions. \cite{jurgovsky2018sequence}
+framed fraud detection as a sequence classification problem, demonstrating that LSTMs
+improved detection of card-present fraud and, critically, detected different fraud types
+than random forests, suggesting that ensemble combination of sequential and tabular
+models is beneficial. \cite{benchaji2021enhanced} augmented LSTM with attention
+mechanisms, showing that attention weights selectively focus on the most fraud-predictive
+events within a transaction history while simultaneously providing interpretability for
+auditors.
+
+\subsection{Autoencoders and Generative Models}
+
+Autoencoders offered an unsupervised route to anomaly detection that is well suited to
+the extreme class imbalance in fraud settings. Trained exclusively on legitimate
+transactions, an autoencoder learns to reconstruct normal patterns and assigns high
+reconstruction error to anomalous inputs. \cite{schreyer2017detection} applied deep
+autoencoders to detect anomalous journal entries in financial audits, and their
+follow-up work \cite{schreyer2019adversarial} extended this to adversarial autoencoders
+that learn semantically interpretable latent spaces, providing both detection and
+explanation capabilities.
+
+Generative Adversarial Networks (GANs) addressed class imbalance by generating
+synthetic fraudulent examples to augment training sets. \cite{fiore2019using}
+demonstrated that classifiers trained on GAN-augmented datasets significantly improved
+sensitivity, and \cite{alamri2023survey} surveyed GAN variants for this purpose,
+finding that Wasserstein GANs and Conditional Tabular GANs are particularly effective
+for the mixed-type tabular data common in fraud datasets.
+
+\subsection{Transformer and Attention-Based Methods}
+
+Transformer architectures represent the most recent deep learning frontier in fraud
+detection. \cite{yu2024credit} adapted the full Transformer encoder for credit card
+fraud detection, reporting significant improvements over XGBoost and TabNet baselines.
+The Finsformer model \cite{finsformer2024} integrated Transformers with cluster-based
+attention mechanisms, achieving high precision and recall on financial attack detection.
+A recurring finding across attention-based studies is that attention weights serve as
+natural, post-hoc explanations of model decisions—an important property in regulated
+financial environments where model transparency is a compliance requirement.
+
+Despite their representational power, all of these architectures treat each transaction
+or entity as an independent sample or as part of a sequence. They cannot directly encode
+the relational dependencies between entities that are central to understanding networked
+fraud. This limitation motivates the adoption of graph-based representations.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Graph-Based Methods and Graph Neural Networks}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Early Graph-Based Fraud Detection}
+
+The recognition that fraud is fundamentally a relational phenomenon motivated an early
+shift toward graph-based analysis. \cite{pandit2007netprobe} introduced NetProbe, which
+models auction users and transactions as a Markov Random Field and applies belief
+propagation to infer fraud probabilities, establishing the \emph{guilt-by-association}
+principle—that suspicion propagates through network connections. \cite{akoglu2015graph}
+provided a comprehensive survey of graph-based anomaly detection, covering spectral
+methods, dense subgraph mining, and community detection, and demonstrated the breadth of
+fraud-relevant structural signals available in relational data. Shallow embedding
+methods such as DeepWalk \cite{perozzi2014deepwalk} and node2vec \cite{grover2016node2vec}
+generated node representations by simulating random walks on the graph, capturing both
+local and global structural proximity. Although effective at encoding topology, these
+methods cannot jointly leverage node attributes and graph structure in an end-to-end
+fashion, limiting their utility in settings where both feature space and relational
+structure are informative.
+
+\subsection{Foundational Graph Neural Network Architectures}
+
+Graph Neural Networks (GNNs) addressed the limitations of shallow methods by enabling
+end-to-end learning of node representations that jointly incorporate node features and
+neighborhood topology through iterative message passing. \cite{bronstein2017geometric}
+framed this development within the broader program of geometric deep learning, arguing
+that graphs provide the natural inductive bias for relational data. \cite{gilmer2017neural}
+proposed the Message Passing Neural Network (MPNN) framework as a unifying abstraction,
+showing that most GNN variants can be expressed as instances of a general
+neighborhood-aggregation update rule. \cite{wu2021graph} provided a comprehensive
+survey of GNN architectures and applications, tracing the field from spectral to spatial
+methods and documenting the empirical conditions under which each class performs best.
+
+The Graph Convolutional Network (GCN) of \cite{kipf2017semi} introduced scalable
+spectral-inspired convolutions through a first-order approximation of graph Laplacian
+filters, with a propagation rule that scales linearly in the number of edges and enables
+semi-supervised learning from a small fraction of labeled nodes. GraphSAGE
+\cite{hamilton2017inductive} addressed the transductive limitation of GCN by introducing
+inductive representation learning through fixed-size neighborhood sampling and flexible
+aggregation operators—mean, max-pooling, and LSTM—enabling generalization to previously
+unseen nodes at inference time. The Graph Attention Network (GAT) \cite{velickovic2018graph}
+extended this framework with masked self-attention over neighborhoods, learning
+differential importance weights for different neighbors and providing a natural mechanism
+for distinguishing informative from noisy connections. The Relational GCN (RGCN)
+\cite{schlichtkrull2018modeling} extended GCN to multi-relational data by learning
+relation-specific weight matrices, directly addressing the heterogeneous edge types
+present in real fraud networks. Together, these four architectures form the backbone of
+virtually all subsequent GNN-based fraud detection systems.
+
+\subsection{GNN Architectures for Fraud Detection}
+
+The application of GNNs to fraud detection proceeded along several parallel lines.
+\cite{liu2018heterogeneous} introduced a heterogeneous GNN that aggregates information
+across device, activity, and account subgraphs for malicious account detection on
+Alipay, establishing an early and influential multi-graph design pattern. GeniePath
+\cite{liu2019geniepath} proposed adaptive receptive paths via LSTM-gated attention,
+allowing the model to select the most relevant depth of neighborhood aggregation for each
+node. \cite{wang2019semignn} introduced a semi-supervised graph attentive network that
+applies hierarchical attention across multiple graph views, improving performance in
+settings with limited labels. \cite{li2019spam} designed a heterogeneous GCN for spam
+review detection on a commodity marketplace that applies type-specific aggregators for
+different relation types.
+
+\cite{liu2020alleviating} formally identified the \emph{inconsistency problem} in
+applying GNNs to fraud detection: because fraudsters strategically connect to benign
+nodes, standard message passing aggregates predominantly legitimate neighbor signals,
+which suppresses the fraudulent signal of the target node. Their GraphConsis model
+addresses this by filtering neighbors whose feature vectors are inconsistent with the
+center node's class prediction before aggregation. \cite{dou2020enhancing} extended
+this line of work by formalizing two distinct types of fraudster camouflage—feature
+camouflage, in which fraudsters manipulate their own attributes to resemble benign users,
+and relation camouflage, in which they establish connections to legitimate entities—and
+proposing a reinforcement learning–guided neighbor selector that adaptively filters
+noisy connections at the relation level. \cite{liu2021pick} addressed the class
+imbalance dimension of the problem through label-balanced neighborhood sampling, showing
+that ensuring class balance during aggregation consistently improves minority-class
+recall. \cite{peng2022reinforced} further developed the RL-based approach with a
+recursive and scalable neighbor selection framework that operates across multiple
+relation types, demonstrating consistent improvements on standard benchmarks.
+
+\subsection{Scalability, Explainability, and Robustness}
+
+Three additional concerns have shaped recent GNN fraud detection research. First,
+\emph{scalability}: production fraud systems must operate on graphs with hundreds of
+millions of nodes and billions of edges. \cite{wu2019simplifying} showed that removing
+nonlinearities between GCN layers and collapsing them into a single linear transformation
+preserves most of the expressive power while dramatically reducing computational cost.
+xFraud \cite{rao2022xfraud}, deployed at eBay on graphs with over one billion nodes,
+demonstrated that heterogeneous GNNs can be scaled to production through efficient
+mini-batch sampling and embedding caching. Second, \emph{explainability}: the need for
+regulatory transparency in financial services has motivated the development of
+interpretable fraud detectors. SEFraud \cite{sefraud2024} generates self-explanations
+through interpretive mask learning on graph structures, identifying the subgraph
+substructures most responsible for a fraud prediction. Third, \emph{adversarial
+robustness}: \cite{sun2018adversarial} surveyed attacks on graph data—including node
+feature perturbation and edge injection—and corresponding defenses, documenting that
+GNNs are substantially more vulnerable to adversarial manipulation than their Euclidean
+counterparts, which is a critical concern in adversarial fraud settings.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Reinforcement Learning for Graph-Based Decision Making}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Reinforcement learning (RL) provides a principled framework for sequential decision
+making under uncertainty and has seen growing application to graph-structured problems.
+\cite{zhou2020graph} surveyed GNN methods and applications, highlighting the potential
+of combining learned graph representations with RL policies for downstream tasks
+including graph construction, node selection, and dynamic network control. The
+combination is natural: GNNs provide rich structural representations of system state,
+while RL policies learn action strategies that maximize long-term reward, enabling
+adaptive behavior that static models cannot achieve.
+
+In the fraud detection context, the key decision problem is \emph{relation weighting}:
+which relational channels and which specific neighbors should be trusted when aggregating
+messages for a given node? Static approaches assign fixed weights to all relations, which
+is suboptimal when the informativeness of each relation varies across nodes and evolves
+as fraudsters adapt their camouflage strategies. Early work by \cite{dou2020enhancing}
+formulated this as a multi-armed bandit problem, using cumulative reward based on
+inter-epoch changes in average neighbor distance to adaptively adjust the top-$p$
+filtering threshold for each relation. \cite{peng2022reinforced} refined this with a
+recursive RL framework that operates at multiple relation levels simultaneously,
+improving both the granularity and stability of the learned selection policy.
+
+More broadly, RL has been applied to graph-based tasks including combinatorial
+optimization, knowledge graph completion, and dynamic graph evolution
+\cite{zhou2020graphrl}. Policy gradient methods such as REINFORCE, proximal policy
+optimization (PPO), and deep $Q$-networks (DQN) have all been applied in graph settings,
+with the specific choice depending on whether the action space is continuous or discrete
+and whether a differentiable reward signal is available. A general challenge in applying
+RL to graph problems is the \emph{state representation}: the RL agent must receive a
+compact and informative summary of the current graph state to make good decisions. Early
+approaches used handcrafted structural statistics; recent work increasingly uses GNN
+embeddings as state representations, closing the loop between the representation learner
+and the policy \cite{zhou2020graphrl}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Large Language Models for Semantic Graph Analysis}
+% ─────────────────────────────────────────────────────────────────────────────
+
+Large language models (LLMs) have emerged as a powerful tool for extracting semantic
+representations from textual data, with recent work beginning to integrate them with
+graph neural networks for tasks where both structural and linguistic signals are relevant.
+In fraud detection, text associated with entities—review content, transaction
+descriptions, user profiles—carries semantic anomaly signals that complement topological
+ones. Fraudsters who mimic legitimate relational structure may still exhibit detectable
+linguistic patterns, and conversely, textual analysis alone misses the relational context
+that reveals coordinated fraud rings.
+
+\cite{yang2025flag} introduced FLAG, the first framework to integrate LLMs with GNNs
+for fraud detection. FLAG uses an LLM to extract discriminative text features from
+entity descriptions and applies them at two levels: to supplement node feature
+representations for the GNN and to guide neighbor sampling by computing LLM-based
+semantic similarity between candidate neighbors and the target node. Deployed in Alipay's
+credit risk system, FLAG reported average improvements of approximately 3\% in
+$F_1$-macro and 7\% in AUC over competitive GNN baselines on public benchmarks,
+demonstrating that LLM-derived semantic features provide complementary signal beyond
+what is captured by structural aggregation alone.
+
+This integration is conceptually important because it bridges two distinct modes of
+reasoning: structural reasoning, which operates over the topology of interaction graphs,
+and semantic reasoning, which operates over the meaning of entity descriptions and
+behavioral patterns. Prior graph fraud detection systems were limited to the former.
+By incorporating LLM-based semantic state representations into the RL policy, as
+proposed in this thesis, the agent can detect feature-level camouflage that is invisible
+to purely structural analysis—for instance, identifying that a node's textual description
+is semantically anomalous relative to its claimed neighborhood, even when its graph
+position has been carefully constructed to appear legitimate.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Summary and Research Gap}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The literature reviewed in this chapter reveals a clear and consistent progression.
+Classical and machine learning approaches established effective baselines but were
+limited by hand-crafted features and their inability to model relational structure.
+Deep learning methods—CNNs, RNNs, autoencoders, transformers—improved representational
+power but still treat entities as independent instances or linear sequences, missing
+the graph topology. Graph neural networks addressed this gap by enabling end-to-end
+learning over relational data, and purpose-built fraud detection architectures added
+mechanisms for class imbalance, camouflage resistance, and heterogeneous relations.
+Reinforcement learning extended GNN-based detectors by enabling adaptive, policy-driven
+decisions about which relational signals to trust. Most recently, large language models
+have opened a new dimension by introducing semantic reasoning into what had previously
+been a purely structural analysis.
+
+However, a gap remains. Existing RL-guided GNN frameworks either use simple bandit-based
+controllers with limited state representations \cite{dou2020enhancing}, or do not
+incorporate semantic signals into the policy state at all \cite{peng2022reinforced}.
+Conversely, LLM-integration work such as FLAG uses language models to augment node
+features and guide sampling, but does not employ a learned RL policy for dynamic
+relation weighting. No existing work unifies all three components—GNN-based structural
+reasoning, RL-guided relation weighting, and LLM-enhanced semantic state modeling—into
+a single coherent framework. This thesis addresses that gap.
+
+\clearpage

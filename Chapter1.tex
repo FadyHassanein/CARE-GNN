@@ -1,0 +1,76 @@
+
+\chapter{Introduction}
+\lhead{\emph{Chapter1}} 
+
+Modern digital systems such as online banking platforms, mobile payment networks, and e-commerce marketplaces have significantly increased the scale and speed of financial transactions. While this expansion enables greater accessibility, it also exposes these systems to new and evolving forms of fraudulent activity. Fraudsters exploit structural weaknesses and complex transactional patterns that often remain hidden within large-scale data. Traditional rule-based detection systems struggle to keep pace with these adaptive behaviours, leading to false positives or even undetected fraud and substantial financial loss. As a result, there is a growing need for advanced analytical methods capable of identifying subtle anomalies, modelling relational dependencies, and learning from dynamic transaction environments. This context forms the foundation for the use of machine learning, deep learning, and eventually graph-based approaches in fraud detection.
+
+Machine learning has traditionally focused on learning patterns from data represented in tabular, sequential, or grid formats. These models commonly assume that each sample is independent and that relationships can be captured solely through feature vectors or temporal ordering. Supervised learning approaches depend on carefully designed input features, and their success often hinges on how well these features summarise the underlying data. While this has enabled strong performance in many classical tasks, it offers limited support for situations where interactions between entities are central to understanding the system.
+
+Deep learning expanded the capabilities of machine learning by allowing models to learn hierarchical representations directly from raw data. Convolutional Neural Networks (CNNs) advanced image understanding through grid-based convolutions, and Recurrent Neural Networks (RNNs) excelled in sequence modelling by capturing temporal dependencies. Despite their success, these architectures rely on fixed, regular input structures. As a result, they struggle to process irregular, interconnected data such as social interactions, communication networks, or financial transaction flows---settings where the relationships between entities carry essential meaning.
+
+Real-world systems frequently generate data that is relational in nature, where entities interact, influence one another, or form structured connection patterns. Examples include users linked through purchasing behaviour on e-commerce platforms, devices communicating within digital infrastructures, and individuals connected through social networks. The inability of traditional machine learning and deep learning models to directly incorporate these relational dependencies highlights the need for frameworks that can naturally represent and learn from interconnected information.
+
+Graphs provide such a framework by representing entities as nodes and interactions as edges. Early attempts to learn from graph-structured data relied on handcrafted features, shallow embedding techniques such as DeepWalk and node2vec, or classical network statistics. Although these approaches offered initial insights, they could not jointly leverage node attributes and graph topology in an end-to-end learning process. As a result, they struggled to generalise complex relational patterns or adapt to dynamic environments.
+
+Graph Neural Networks (GNNs) emerged in response to these limitations, extending representation learning to non-Euclidean domains. GNNs iteratively aggregate information from local neighbourhoods, enabling the model to construct expressive representations of nodes, edges, and subgraphs. Prominent variants include Graph Convolutional Networks (GCNs), which generalise convolution operations to graph structures, and GraphSAGE, which supports inductive learning through flexible neighbourhood aggregation strategies. These models address the shortcomings of earlier techniques by jointly modelling structure and attributes in a unified neural framework.
+
+Despite these advances, GNN-based fraud detection faces a distinctive adversary: fraudsters on online review platforms such as Amazon and Yelp deliberately evade neighbourhood aggregation by \emph{camouflaging} both their node attributes and their connections, blending into the legitimate majority. Dedicated architectures such as CARE-GNN~\cite{dou2020enhancing} address this by filtering neighbours through a heuristic reinforcement-learning bandit, and more recent work integrates large language models (LLMs) into GNN pipelines to extract semantic signal from review text. No prior work, however, unifies all three capabilities---structural graph reasoning, adaptive reinforcement-learning-based filtering, and large-language-model semantic understanding---within a single coherent framework. This thesis addresses that gap by proposing a unified GNN + RL + LLM framework for camouflage-resistant fraud detection on multi-relation review graphs, together with a set of component-level ablations that attribute its performance gains to specific design decisions.
+
+This thesis is organised as follows. Chapter~2 reviews the main lines of related work relevant to this study, including graph-based fraud detection, graph neural networks, reinforcement learning on graphs, and the use of large language models for semantic graph analysis. Chapter~3 presents the proposed unified GNN + RL + LLM framework and its three pillars, describing the multi-relation backbone, the actor--critic policy network, and the LLM-based semantic enrichment mechanisms. Chapter~4 reports the experimental evaluation on the Amazon and YelpChi benchmarks, including the three-pillar ablation that constitutes the main empirical claim and the nine component-level ablations that validate each internal design decision. Finally, Chapter~5 concludes the thesis, discusses its limitations, and outlines directions for future research.
+
+
+\section{Contribution}
+
+This thesis introduces a unified GNN + RL + LLM framework for camouflage-resistant fraud detection on multi-relation review graphs, with three main technical contributions.
+
+  \paragraph{An adaptive reinforcement-learning policy for neighbour selection.}
+  We replace the heuristic bandit used by CARE-GNN for neighbour filtering with
+  a learned actor--critic policy, the Camouflage-Aware Policy Network (CAPN).
+  Unlike the original design, which updates a single global threshold per
+  relation once per epoch, CAPN produces a separate, adaptive threshold for
+  every node and every relation, conditioned on a compact per-node state
+  vector. The same threshold simultaneously controls how many neighbours are
+  retained and how each relation contributes to the final node representation,
+  so one learned quantity now governs both decisions. Training the policy
+  with an actor--critic formulation rather than vanilla REINFORCE proved
+  essential: the reduction in gradient variance is what makes the learned
+  policy converge reliably on the more challenging real-world benchmark.
+
+  \paragraph{LLM-derived structural reasoning as additional policy input.}
+  To let the policy reason about fraud patterns that are not visible in the
+  raw numerical features, we inject large-language-model-derived signals into
+  its input state. For every node, a frontier language model analyses a
+  precomputed profile of structural statistics---degrees, neighbourhood
+  overlaps, feature anomalies, clique-like density, and similar indicators---
+  and returns a compact set of fraud-relevant risk scores. These scores are
+  concatenated to the policy's state vector and nothing else in the framework
+  is modified. We deliberately treat the language model as a reasoning engine
+  over structural inputs rather than as a generic text encoder: earlier
+  experiments with off-the-shelf sentence-transformer embeddings produced no
+  improvement, because the numerical precision they implicitly discard is
+  precisely the signal the policy needs. All language-model outputs are
+  precomputed once and cached, so training cost is independent of the external
+  model.
+
+  \paragraph{Gated residual injection of textual risk signals into features.}
+  Where the dataset provides raw review text, we exploit it through a separate
+  pathway that enters the model at the feature level rather than the policy
+  state. For every review, the language model returns a small set of
+  fraud-specific textual scores---capturing phenomena such as generic or
+  promotional phrasing, sentiment inconsistency, and copy-paste repetition---
+  that carry signal the pre-normalised behavioural features cannot. Injecting
+  these scores by naive concatenation degrades performance, because the wider
+  weight matrices absorb noise faster than signal. We instead introduce a
+  gated residual module that adds a learnable, per-dimension projection of the
+  text scores to the original features while initialising the gate so the
+  contribution starts near zero. The network can open each gate dimension
+  where the text signal helps and close it where it does not, effectively
+  giving training the ability to unlearn harmful text dimensions without any
+  architectural change. This gated injection is the largest single
+  contributor to the final result on the benchmark that ships review text.
+
+
+%%\section{Background}\label{s2}
+
+
+\clearpage
