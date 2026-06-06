@@ -1068,12 +1068,10 @@ def build():
     line.fill.solid()
     line.fill.fore_color.rgb = ACCENT
 
-    add_paragraph(s, "+1.99 pp  AUC over our CARE-GNN reproduction",
+    add_paragraph(s, "+1.99 pp  AUC over our own same-split CARE-GNN reproduction",
                    0.6, 4.5, 12, 0.5, font_size=22, bold=True, color=POSITIVE, align=PP_ALIGN.CENTER)
-    add_paragraph(s, "+2.86 pp  AUC over Dou et al. (2020) published CARE-GNN",
-                   0.6, 5.1, 12, 0.5, font_size=22, bold=True, color=POSITIVE, align=PP_ALIGN.CENTER)
     add_paragraph(s, "Welch's t-test:  p < 0.001  across three seeds.",
-                   0.6, 5.85, 12, 0.5, font_size=16, italic=True, color=TEXT_MAIN, align=PP_ALIGN.CENTER)
+                   0.6, 5.25, 12, 0.5, font_size=16, italic=True, color=TEXT_MAIN, align=PP_ALIGN.CENTER)
     slides_meta.append(("Results",))
 
     # Slide 19: Main table
@@ -1141,8 +1139,8 @@ def build():
     set_background(s)
     add_title_bar(s, "Comparison with the CARE-GNN Paper (YelpChi)")
     add_lead(s,
-             "Our full framework also improves over the original CARE-GNN paper's reported AUC by +2.86 pp — larger than the gain over our own Row 1, "
-             "because our reproduction is already a stronger CARE-GNN baseline than the published one.")
+             "The starred rows are literature context at a different (40 %) training fraction, so no cross-protocol delta is computed against them. "
+             "The three-pillar gain is the +1.99 pp over our own same-split Row 1 reproduction.")
     data = [
         ["Model", "AUC", "Recall"],
         ["GCN *", "0.5247", "0.5081"],
@@ -1160,7 +1158,8 @@ def build():
                    "*  paper-reported values, Dou et al. (2020) Table 3, 40 % training data",
                    0.8, 6.75, 12, 0.3, font_size=10, italic=True, color=TEXT_MUTED)
     add_paragraph(s,
-                   "Our full framework improves AUC by +2.86 pp over the paper-reported CARE-GNN.",
+                   "Three-pillar gain = +1.99 pp over our own same-split Row 1 reproduction; "
+                   "starred paper values (40 % train) are literature context only.",
                    0.8, 7.08, 12, 0.3, font_size=13, bold=True, color=POSITIVE)
     slides_meta.append(("Results",))
 

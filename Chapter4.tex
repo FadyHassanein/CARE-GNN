@@ -13,7 +13,9 @@ This chapter reports the experimental evaluation of the unified GNN + RL + LLM f
     \item Section~\ref{sec:amazon-baselines} reports reference baselines (GCN, GraphSAGE) on Amazon, included for context only---they are not part of the unified framework.
 \end{itemize}
 
-\paragraph{Headline result.} On YelpChi (3 seeds, 31 epochs each) the unified GNN + RL + LLM framework achieves \textbf{AUC} $\mathbf{0.7856 \pm 0.0022}$, \textbf{AP} $\mathbf{0.4108 \pm 0.0052}$, and \textbf{F1-macro} $\mathbf{0.6099 \pm 0.0565}$, improving over our CARE-GNN reproduction ($0.7657 \pm 0.0007$ AUC) by \textbf{+1.99\,pp} with Welch's $t$-test $p < 0.001$. Against the AUC reported by Dou~et~al.~(2020) for CARE-GNN on the same benchmark (0.7570), the improvement is \textbf{+2.86\,pp}. The full per-row table, per-seed numbers, component contribution, and significance analysis are given in Section~\ref{sec:results-unified}; readers interested primarily in the main contribution may skip directly there.
+% NOTE(restatement): the AUC/AP/F1 values and the +1.99pp below are pending an
+% update after the validation-selected, Haiku-sourced re-run (Blockers B1/B3).
+\paragraph{Headline result.} On YelpChi (3 seeds, 31 epochs each) the unified GNN + RL + LLM framework achieves \textbf{AUC} $\mathbf{0.7856 \pm 0.0022}$, \textbf{AP} $\mathbf{0.4108 \pm 0.0052}$, and \textbf{F1-macro} $\mathbf{0.6099 \pm 0.0565}$, improving over our own CARE-GNN reproduction \emph{under the identical 25\%/15\%/60\% split} ($0.7657 \pm 0.0007$ AUC) by \textbf{+1.99\,pp} with Welch's $t$-test $p < 0.001$. This like-for-like comparison against our own baseline is the attribution we report; the AUC of 0.7570 quoted by Dou~et~al.~(2020) was obtained at a different (40\%) training fraction and is included only as literature context in Section~\ref{sec:yelp-paper-compare}, not as a same-protocol delta. The full per-row table, per-seed numbers, component contribution, and significance analysis are given in Section~\ref{sec:results-unified}; readers interested primarily in the main contribution may skip directly there.
 
 
 \section{Experimental Protocol and Evaluation Metrics}
@@ -237,7 +239,7 @@ The full framework significantly outperforms both the original CARE-GNN ($p < 0.
 \subsection{Comparison with the Original CARE-GNN Paper}
 \label{sec:yelp-paper-compare}
 
-Dou et al.~\cite{dou2020enhancing} report two metrics for YelpChi at 40\% training data: AUC-ROC and Recall-macro. Table~\ref{tab:main-framework-paper-compare} places the unified framework alongside the paper's baselines at the comparable training fraction.
+Dou et al.~\cite{dou2020enhancing} report two metrics for YelpChi at 40\% training data: AUC-ROC and Recall-macro. Table~\ref{tab:main-framework-paper-compare} places the unified framework (trained under this thesis's 25\%/15\%/60\% protocol) alongside the paper's baselines \emph{for literature context only}. The two groups use different training fractions---40\% for the starred paper values, 25\% here---so their absolute numbers are not directly comparable and we deliberately compute no cross-protocol delta between them; the three-pillar contribution is attributed against our own same-split Row~1 reproduction (below).
 
 \begin{table}[h!]
 \centering
@@ -257,12 +259,12 @@ Row 3: GNN + LLM (text gate)                      & $0.7797 \pm 0.0038$ & $0.677
 \textbf{Row 4: GNN + RL + LLM (full framework)}   & $\mathbf{0.7856 \pm 0.0022}$ & $0.6923$ \\
 \bottomrule
 \end{tabular}
-\caption{YelpChi comparison against the original CARE-GNN paper~\cite{dou2020enhancing}, Table~3 (40\% training data). Starred rows are paper-reported values.}
+\caption{YelpChi results in the context of the original CARE-GNN paper~\cite{dou2020enhancing}, Table~3. Starred rows are paper-reported values at \emph{40\%} training data (literature context only); Rows~1--4 are this thesis's framework at the \emph{25\%/15\%/60\%} protocol. Because the training fractions differ, no delta is computed between the starred and unstarred groups---the three-pillar contribution is attributed against the same-split Row~1 reproduction.}
 \label{tab:main-framework-paper-compare}
 \end{table}
 
 \noindent
-The unified framework improves AUC by $+2.86$\,pp over the paper-reported CARE-GNN baseline ($0.7570 \to 0.7856$). Recall is slightly lower than the paper's $0.7192$, consistent with the AUC--recall trade-off: a better-ranking classifier selects a marginally more conservative operating point at equal probability threshold. Because the paper reports a single-run maximum rather than a multi-seed mean, the appropriate attribution of the three-pillar contribution is against our Row~1 reproduction ($0.7657$), giving the $+1.99$\,pp we report.
+The appropriate attribution of the three-pillar contribution is against our own Row~1 reproduction under the identical split ($0.7657 \to 0.7856$), giving the \textbf{+1.99\,pp} we report. We deliberately do \emph{not} compute an improvement against the paper's $0.7570$: that value was measured at a different (40\%) training fraction, and the paper reports a single-run maximum rather than a validation-selected multi-seed mean, so a head-to-head delta would conflate three confounds (training fraction, seed discipline, and checkpoint-selection protocol). The starred paper values are therefore retained only to situate the work in the literature. Our Recall is slightly lower than the paper's $0.7192$, consistent with the AUC--Recall trade-off---a better-ranking classifier can sit at a marginally more conservative operating point at a fixed probability threshold---and with the protocol differences just noted.
 
 \paragraph{Evaluation-protocol differences.} Two differences between our protocol and the paper's are worth flagging:
 \begin{enumerate}
@@ -282,7 +284,7 @@ The YelpChi evaluation yields four findings:
     \item \textbf{TextFeatureGate resolves the feature-level enrichment failure} observed on Amazon (Study~A8). The learnable sigmoid-gated injection preserves the node-feature dimensionality while letting training decide how much of the text signal to admit. The gate starts at $\sigma(g) \approx 0.12$, so the initial network behaviour is close to CARE-GNN and the model is free to \emph{unlearn} the text contribution where it is unhelpful.
 \end{enumerate}
 
-\paragraph{Thesis position.} On the Amazon dataset the three pillars are individually near-redundant because the 25 handcrafted features already yield AUC $\approx 0.94$. On the more challenging YelpChi dataset the same three pillars combine to deliver a statistically significant improvement over the published CARE-GNN baseline. This validates the design hypothesis: \emph{each pillar addresses a distinct failure mode, and the pillars compose additively when their integration interfaces (gated features, actor--critic advantage, compact state enrichment) are engineered to avoid information loss}. The unified framework is therefore the recommended configuration for heterogeneous review-graph fraud detection under realistic conditions where textual content is available.
+\paragraph{Thesis position.} On the Amazon dataset the three pillars are individually near-redundant because the 25 handcrafted features already yield AUC $\approx 0.94$. On the more challenging YelpChi dataset the same three pillars combine to deliver a statistically significant improvement over our own same-split CARE-GNN reproduction (Row~1). This validates the design hypothesis: \emph{each pillar addresses a distinct failure mode, and the pillars compose additively when their integration interfaces (gated features, actor--critic advantage, compact state enrichment) are engineered to avoid information loss}. The unified framework is therefore the recommended configuration for heterogeneous review-graph fraud detection under realistic conditions where textual content is available.
 
 
 \section{Supporting Evidence: Amazon Component Ablations (A1--A9)}

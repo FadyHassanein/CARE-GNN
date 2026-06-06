@@ -470,8 +470,7 @@
     \end{center}
     \vspace{0.8em}
     \begin{center}\normalsize
-    \textbf{+1.99\,pp} AUC over our CARE-GNN reproduction\\
-    \textbf{+2.86\,pp} AUC over Dou~et~al.~(2020)'s published CARE-GNN\\[0.3em]
+    \textbf{+1.99\,pp} AUC over our own same-split CARE-GNN reproduction\\[0.3em]
     Welch's $t$-test: $p < 0.001$ across three seeds.
     \end{center}
 \end{frame}
@@ -545,9 +544,11 @@
     \end{center}
     \vspace{0.5em}
     \footnotesize
-    Our full framework improves AUC by \textbf{+2.86\,pp} over the paper-reported
-    CARE-GNN baseline. Recall is slightly lower, consistent with the AUC--recall
-    trade-off of a better-ranking classifier at the same decision threshold.
+    Starred values are literature context at a \emph{different} (40\%) training
+    fraction, so no cross-protocol delta is computed against them. The three-pillar
+    gain is the \textbf{+1.99\,pp} over our own same-split Row~1 reproduction.
+    Recall is slightly lower, consistent with the AUC--Recall trade-off of a
+    better-ranking classifier at a fixed decision threshold.
 \end{frame}
 
 \begin{frame}{Amazon Component Ablations (A1--A9) Takeaways}
