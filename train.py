@@ -160,6 +160,12 @@ def parse_args():
                         help='Append text risk scores to the RL policy state vector.')
     parser.add_argument('--text-risk-scores-path', type=str, default='',
                         help='Path to text_risk_scores.pt (default: llm_embeddings/{data}/text_risk_scores.pt).')
+    parser.add_argument('--text-risk-mode', type=str, default='auto',
+                        choices=['auto', 'template', 'haiku'],
+                        help='Which text-risk artifact to load: auto=canonical '
+                             'text_risk_scores.pt; template/haiku=the pinned '
+                             'text_risk_scores_<tag>.pt variant. Provenance is logged either way. '
+                             'Ignored if --text-risk-scores-path is given.')
 
     # label predictor
     parser.add_argument('--use-mlp-label', action='store_true', default=False, help='Use MLP label predictor without full CAPN policy network.')
@@ -212,6 +218,27 @@ def get_loss_fn(loss_type, labels=None, under_sample=1):
         return WeightedCrossEntropy(labels=labels)
     else:
         raise ValueError(f'Unknown loss function: {loss_type}')
+
+
+def select_best_metrics(performance_log):
+    """Select the evaluation epoch by best VALIDATION score and return that
+    epoch's test metrics.
+
+    Model selection must never read the test labels. ``train`` records, on every
+    logged epoch, a ``selection_score`` equal to the validation AUC (or, when no
+    validation split exists, the negative training loss as a non-test proxy). We
+    maximise that score and return the corresponding test-metrics dict.
+
+    Falls back to the final logged epoch when no ``selection_score`` is present
+    (e.g. logs produced before this change). It never maximises the test AUC —
+    that would be test-set epoch selection (a leakage path).
+    """
+    if not performance_log:
+        return {}
+    scored = [m for m in performance_log if 'selection_score' in m]
+    if scored:
+        return max(scored, key=lambda m: m['selection_score'])
+    return performance_log[-1]
 
 
 def train(args):
@@ -283,14 +310,30 @@ def train(args):
     text_risk_scores = None           # raw [N, 6] tensor (kept for later use)
     text_feature_gate = None          # TextFeatureGate module (only in 'gate' mode)
     if args.text_enrichment != 'none' or args.text_state_enrichment:
-        tr_path = args.text_risk_scores_path or f'llm_embeddings/{args.data}/text_risk_scores.pt'
+        from llm.artifacts import variant_path, read_meta, describe, sha256_tensor
+        canonical_tr = f'llm_embeddings/{args.data}/text_risk_scores.pt'
+        if args.text_risk_scores_path:
+            tr_path = args.text_risk_scores_path
+        elif args.text_risk_mode == 'auto':
+            tr_path = canonical_tr
+        else:
+            tr_path = variant_path(canonical_tr, args.text_risk_mode)
         if os.path.exists(tr_path):
             text_risk_scores = torch.load(tr_path, weights_only=True)
-            logger.info(f'Loaded text risk scores: {text_risk_scores.shape} from {tr_path}')
+            logger.info(f'Loaded text risk scores: {tuple(text_risk_scores.shape)} from {tr_path}')
+            # Always record which artifact (and how it was produced) backed this run.
+            logger.info(f'  text-score provenance: {describe(tr_path)}')
+            if read_meta(tr_path) is None:
+                logger.warning(
+                    f'  text-score provenance is UNPINNED (no .meta.json sidecar); '
+                    f'sha256={sha256_tensor(text_risk_scores)[:12]}. Regenerate via '
+                    f'llm.generate_text_risk_scores (or scripts/pin_text_risk_artifacts.py) '
+                    f'to pin provenance.')
         else:
             raise FileNotFoundError(
-                f'text_risk_scores.pt not found at {tr_path}. '
-                f'Run: python -m llm.generate_text_risk_scores --data {args.data} --mode template')
+                f'text risk scores not found at {tr_path} (mode={args.text_risk_mode}). '
+                f'Run: python -m llm.generate_text_risk_scores --data {args.data} --mode template '
+                f'(or --mode llm), which writes pinned text_risk_scores_<tag>.pt variants.')
 
     if args.text_enrichment == 'concat' and text_risk_scores is not None:
         tr_np = text_risk_scores.numpy()
@@ -630,24 +673,38 @@ def train(args):
         if epoch % args.test_epochs == 0:
             gnn_model.eval()
             with torch.no_grad():
+                # test-set metrics for this epoch (recorded for later selection)
                 if args.model == 'SAGE':
                     metrics = test_sage(idx_test, y_test, gnn_model, args.batch_size, device=device)
                 else:
                     metrics = test_care(idx_test, y_test, gnn_model, args.batch_size, device=device)
-                    performance_log.append(metrics)
 
-                # model selection metric
+                # model-selection score: ALWAYS validation, never the test set.
+                # With no validation split (e.g. k-fold CV) fall back to the
+                # negative training loss as a non-test selection proxy.
                 if args.use_validation and idx_val is not None:
                     if args.model == 'SAGE':
                         val_metrics = test_sage(idx_val, y_val, gnn_model, args.batch_size, device=device)
                         val_metric = val_metrics['auc']
+                        metrics['val_ap'] = float(val_metrics.get('ap', 0.0))
+                        metrics['val_f1'] = float(val_metrics.get('f1', 0.0))
                     else:
                         val_metrics = test_care(idx_val, y_val, gnn_model, args.batch_size, device=device)
                         val_metric = val_metrics['gnn_auc']
+                        metrics['val_ap'] = float(val_metrics.get('gnn_ap', 0.0))
+                        metrics['val_f1'] = float(val_metrics.get('gnn_f1', 0.0))
+                    metrics['val_auc'] = float(val_metric)
                     logger.info(f'Validation AUC: {val_metric:.4f}')
                 else:
                     # no validation set: use training loss to avoid test data leakage
                     val_metric = -epoch_loss / num_batches
+
+                # Record the selection score on this epoch's (test) metrics entry
+                # so downstream picks the best-VALIDATION epoch rather than the
+                # best-test epoch (selecting on test AUC is test-set leakage).
+                metrics['selection_score'] = float(val_metric)
+                metrics['epoch'] = epoch
+                performance_log.append(metrics)
 
                 # learning rate scheduling
                 if scheduler is not None:

@@ -59,11 +59,16 @@ def trajectory(path):
     return out
 
 
+def _sstd(values):
+    # sample std (ddof=1) across seeds; 0.0 for a single seed
+    return st.stdev(values) if len(values) > 1 else 0.0
+
+
 def stats(d):
     a = [d[s]['auc'] for s in d]; p = [d[s]['ap'] for s in d]; f = [d[s]['f1'] for s in d]
-    return {'auc_mean': st.mean(a), 'auc_std': st.pstdev(a),
-            'ap_mean': st.mean(p), 'ap_std': st.pstdev(p),
-            'f1_mean': st.mean(f), 'f1_std': st.pstdev(f), 'per_seed': d}
+    return {'auc_mean': st.mean(a), 'auc_std': _sstd(a),
+            'ap_mean': st.mean(p), 'ap_std': _sstd(p),
+            'f1_mean': st.mean(f), 'f1_std': _sstd(f), 'per_seed': d}
 
 
 def main():

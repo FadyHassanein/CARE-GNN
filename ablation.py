@@ -9,9 +9,19 @@ import traceback
 
 import numpy as np
 
-from train import train, setup_logging, parse_args
+from train import train, setup_logging, parse_args, select_best_metrics
 
 logger = logging.getLogger(__name__)
+
+
+def _sample_std(values):
+    """Sample standard deviation (ddof=1) for cross-seed result variance.
+
+    Returns 0.0 for fewer than two values. Population std (ddof=0) understates
+    the variance of a small sample and inflates downstream t-statistics, so
+    reported result spreads use the sample estimator.
+    """
+    return float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
 
 """
     Ablation study framework for CARE-GNN.
@@ -64,10 +74,8 @@ def run_ablation(base_args, experiments, output_dir='results/ablation', num_seed
                 elapsed = time.time() - start_time
                 total_elapsed += elapsed
 
-                if performance_log:
-                    best_metrics = max(performance_log, key=lambda m: m.get('gnn_auc', 0))
-                else:
-                    best_metrics = {}
+                # select the epoch by best validation score (NOT best test AUC)
+                best_metrics = select_best_metrics(performance_log)
 
                 clean_metrics = {k: v.tolist() if hasattr(v, 'tolist') else v
                                  for k, v in best_metrics.items()
@@ -102,11 +110,11 @@ def run_ablation(base_args, experiments, output_dir='results/ablation', num_seed
                 'num_seeds': num_seeds,
                 'num_valid': len(valid_runs),
                 'mean_auc': float(np.mean(auc_values)) if auc_values else 0,
-                'std_auc': float(np.std(auc_values)) if auc_values else 0,
+                'std_auc': _sample_std(auc_values),
                 'mean_ap': float(np.mean(ap_values)) if ap_values else 0,
-                'std_ap': float(np.std(ap_values)) if ap_values else 0,
+                'std_ap': _sample_std(ap_values),
                 'mean_f1': float(np.mean(f1_values)) if f1_values else 0,
-                'std_f1': float(np.std(f1_values)) if f1_values else 0,
+                'std_f1': _sample_std(f1_values),
                 'per_seed_auc': auc_values,
                 'best_metrics': valid_runs[int(np.argmax(auc_values))] if auc_values else {},
                 'elapsed_seconds': total_elapsed,
@@ -114,7 +122,7 @@ def run_ablation(base_args, experiments, output_dir='results/ablation', num_seed
             all_results[exp_name] = result
 
             if auc_values:
-                logger.info(f'{exp_name}: AUC={np.mean(auc_values):.4f} +/- {np.std(auc_values):.4f}')
+                logger.info(f'{exp_name}: AUC={np.mean(auc_values):.4f} +/- {_sample_std(auc_values):.4f}')
 
         # restore the name for results
         exp['name'] = exp_name

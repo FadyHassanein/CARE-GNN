@@ -108,9 +108,9 @@ def main():
         'extra_flags': extra,
         'seeds': [r['seed'] for r in per_seed],
         'per_seed': per_seed,
-        'auc_mean': st.mean(aucs), 'auc_std': st.pstdev(aucs) if len(aucs) > 1 else 0.0,
-        'ap_mean': st.mean(aps), 'ap_std': st.pstdev(aps) if len(aps) > 1 else 0.0,
-        'f1_mean': st.mean(f1s), 'f1_std': st.pstdev(f1s) if len(f1s) > 1 else 0.0,
+        'auc_mean': st.mean(aucs), 'auc_std': st.stdev(aucs) if len(aucs) > 1 else 0.0,
+        'ap_mean': st.mean(aps), 'ap_std': st.stdev(aps) if len(aps) > 1 else 0.0,
+        'f1_mean': st.mean(f1s), 'f1_std': st.stdev(f1s) if len(f1s) > 1 else 0.0,
         'baseline': BASELINE,
         'auc_delta_vs_baseline': st.mean(aucs) - BASELINE['auc'],
     }

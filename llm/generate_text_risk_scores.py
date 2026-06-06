@@ -259,12 +259,16 @@ def generate_scores_llm(texts, dataset='yelp', output_dir=None,
         import anthropic
     except ImportError:
         logger.warning('anthropic package not installed, falling back to template mode')
-        return compute_template_scores(texts)
+        return compute_template_scores(texts), {
+            'effective_mode': 'template', 'reason': 'anthropic-not-installed',
+            'llm_nodes': 0, 'llm_fallback_nodes': len(texts)}
 
     api_key = os.environ.get('ANTHROPIC_API_KEY', '')
     if not api_key:
         logger.warning('ANTHROPIC_API_KEY not set, falling back to template mode')
-        return compute_template_scores(texts)
+        return compute_template_scores(texts), {
+            'effective_mode': 'template', 'reason': 'no-api-key',
+            'llm_nodes': 0, 'llm_fallback_nodes': len(texts)}
 
     if output_dir is None:
         output_dir = f'llm_embeddings/{dataset}'
@@ -290,7 +294,9 @@ def generate_scores_llm(texts, dataset='yelp', output_dir=None,
     remaining = sorted(set(range(num_nodes)) - completed)
     if not remaining:
         logger.info('All nodes already scored')
-        return scores
+        return scores, {
+            'effective_mode': 'llm', 'llm_model': model, 'batch_size': batch_size,
+            'llm_nodes': len(completed), 'llm_fallback_nodes': num_nodes - len(completed)}
 
     logger.info(f'Scoring {len(remaining)} remaining nodes with Claude API '
                 f'(batch_size={batch_size}, model={model})')
@@ -348,12 +354,20 @@ def generate_scores_llm(texts, dataset='yelp', output_dir=None,
     with open(checkpoint_path, 'w') as f:
         json.dump(checkpoint, f)
 
-    return scores
+    llm_nodes = len(checkpoint)
+    fallback_nodes = num_nodes - llm_nodes
+    if fallback_nodes:
+        logger.warning(f'{fallback_nodes}/{num_nodes} nodes were NOT scored by the API '
+                       f'(parse/API failures) and hold template values in this artifact.')
+    return scores, {
+        'effective_mode': 'llm', 'llm_model': model, 'batch_size': batch_size,
+        'llm_nodes': llm_nodes, 'llm_fallback_nodes': fallback_nodes}
 
 
 def generate_text_risk_scores(data='yelp', mode='template',
                               texts_path=None, output_dir=None,
-                              batch_size=10):
+                              batch_size=10, model='claude-haiku-4-5-20251001',
+                              write_canonical=True, force=False):
     """Main entry point.
 
     :param data: dataset name (must have review text file)
@@ -361,6 +375,11 @@ def generate_text_risk_scores(data='yelp', mode='template',
     :param texts_path: path to json list of review texts (ordered by node id)
     :param output_dir: directory to write text_risk_scores.pt
     :param batch_size: batch size for llm mode
+    :param model: Anthropic model id (llm mode); recorded in provenance
+    :param write_canonical: also write/repoint the canonical text_risk_scores.pt
+    :param force: allow repointing the canonical even if it currently holds a
+                  differently-sourced (different tag) artifact
+    :returns: path of the artifact written (canonical if updated, else variant)
     """
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -382,21 +401,61 @@ def generate_text_risk_scores(data='yelp', mode='template',
     num_nodes = len(texts)
     logger.info(f'Loaded {num_nodes} review texts')
 
+    from llm.artifacts import (mode_tag, variant_path, write_meta, read_meta,
+                               build_meta, describe)
+
     if mode == 'template':
         logger.info('Computing template text risk scores (no API calls)...')
         scores = compute_template_scores(texts)
+        effective_mode, model_id, extra = 'template', 'deterministic-template-v1', {}
     elif mode == 'llm':
         logger.info('Generating text risk scores via Claude API...')
-        scores = generate_scores_llm(texts, dataset=data, output_dir=output_dir,
-                                     batch_size=batch_size)
+        scores, stats = generate_scores_llm(texts, dataset=data, output_dir=output_dir,
+                                            batch_size=batch_size, model=model)
+        effective_mode = stats.get('effective_mode', 'llm')
+        extra = stats
+        if effective_mode != 'llm':
+            logger.warning(
+                f"LLM mode fell back to template ({stats.get('reason')}); the artifact "
+                f"will be tagged '{effective_mode}', NOT a Claude model — this prevents a "
+                f'silent template-as-LLM mislabel.')
+            model_id = 'deterministic-template-v1'
+        else:
+            model_id = model
     else:
         raise ValueError(f'Unknown mode: {mode}')
 
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, 'text_risk_scores.pt')
-    torch.save(torch.tensor(scores, dtype=torch.float32), output_path)
-    logger.info(f'Saved text risk scores to {output_path} '
-                f'(shape: [{num_nodes}, {len(SCORE_NAMES)}])')
+    scores_t = torch.tensor(scores, dtype=torch.float32)
+    tag = mode_tag(effective_mode, model_id)
+    canonical_path = os.path.join(output_dir, 'text_risk_scores.pt')
+    variant = variant_path(canonical_path, tag)
+    meta = build_meta(scores_t, mode=effective_mode, model=model_id, dataset=data,
+                      score_names=SCORE_NAMES, source_texts=texts_path, extra=extra)
+
+    # always write the pinned, mode-specific variant (+ provenance sidecar)
+    torch.save(scores_t, variant)
+    write_meta(variant, meta)
+    logger.info(f'Saved pinned variant -> {variant}  [{describe(variant)}]')
+
+    # canonical: refuse to silently overwrite a differently-sourced cache
+    written = variant
+    if write_canonical:
+        existing = read_meta(canonical_path)
+        if (existing and os.path.exists(canonical_path)
+                and existing.get('tag') != tag and not force):
+            logger.error(
+                f'Refusing to repoint canonical {canonical_path}: it currently holds '
+                f"'{existing.get('tag')}' scores (sha {str(existing.get('sha256'))[:12]}) but "
+                f"you generated '{tag}'. The pinned variant was written to {variant}. "
+                f'Re-run with --force to repoint the canonical, or --no-canonical to skip it.')
+        else:
+            torch.save(scores_t, canonical_path)
+            cmeta = dict(meta)
+            cmeta['canonical_of'] = tag
+            write_meta(canonical_path, cmeta)
+            written = canonical_path
+            logger.info(f'Updated canonical -> {canonical_path}  [{describe(canonical_path)}]')
 
     logger.info('=== Text Risk Score Statistics ===')
     for si, name in enumerate(SCORE_NAMES):
@@ -404,7 +463,7 @@ def generate_text_risk_scores(data='yelp', mode='template',
         logger.info(f'{name}: mean={col.mean():.4f}, std={col.std():.4f}, '
                     f'min={col.min():.4f}, max={col.max():.4f}')
 
-    return output_path
+    return written
 
 
 if __name__ == '__main__':
@@ -419,6 +478,15 @@ if __name__ == '__main__':
                         help='Output directory (default: llm_embeddings/{data})')
     parser.add_argument('--batch-size', type=int, default=10,
                         help='Reviews per Claude API call (llm mode only)')
+    parser.add_argument('--model', type=str, default='claude-haiku-4-5-20251001',
+                        help='Anthropic model id (llm mode); recorded in provenance')
+    parser.add_argument('--force', action='store_true', default=False,
+                        help='Allow repointing the canonical text_risk_scores.pt even if '
+                             'it currently holds a differently-sourced (different tag) artifact')
+    parser.add_argument('--no-canonical', action='store_true', default=False,
+                        help='Only write the pinned text_risk_scores_<tag>.pt variant; '
+                             'leave the canonical text_risk_scores.pt untouched')
     args = parser.parse_args()
     generate_text_risk_scores(args.data, args.mode, args.texts_path,
-                              args.output_dir, args.batch_size)
+                              args.output_dir, args.batch_size, model=args.model,
+                              write_canonical=not args.no_canonical, force=args.force)

@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-06-06T15:00:43Z",
+  "dataset": "yelp",
+  "dims": 6,
+  "generator": "llm/generate_text_risk_scores.py",
+  "mode": "llm",
+  "model": "claude-haiku-4-5-20251001",
+  "n_nodes": 45954,
+  "note": "provenance inferred during backfill (no original sidecar existed)",
+  "pinned_by": "scripts/pin_text_risk_artifacts.py",
+  "quantization_0p05_fraction": 0.99815,
+  "score_names": [
+    "generic_language",
+    "sentiment_mismatch",
+    "promotional_tone",
+    "copy_paste_signal",
+    "detail_authenticity",
+    "behavioral_anomaly"
+  ],
+  "sha256": "55eb8ce8d727096e693ad336c17a2a214b2a635d36d828a7585a991acceade79",
+  "source_texts": "data/yelp_review_texts.json",
+  "tag": "haiku"
+}

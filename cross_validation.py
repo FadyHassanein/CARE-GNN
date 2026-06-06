@@ -6,7 +6,7 @@ import time
 import numpy as np
 from sklearn.model_selection import StratifiedKFold
 
-from train import train, setup_logging, parse_args
+from train import train, setup_logging, parse_args, select_best_metrics
 from utils import seed_everything
 
 logger = logging.getLogger(__name__)
@@ -46,8 +46,9 @@ def run_cross_validation(args, num_folds=5):
             model, performance_log = train(args)
             elapsed = time.time() - start_time
 
-            if performance_log:
-                best_metrics = max(performance_log, key=lambda m: m.get('gnn_auc', 0))
+            # select the epoch by best validation score (NOT best test AUC)
+            best_metrics = select_best_metrics(performance_log)
+            if best_metrics:
                 # remove non-numeric entries
                 fold_metrics = {k: v for k, v in best_metrics.items()
                                 if isinstance(v, (int, float))}
@@ -71,7 +72,8 @@ def run_cross_validation(args, num_folds=5):
         values = [m[key] for m in all_fold_metrics if key in m]
         if values:
             results[f'{key}_mean'] = np.mean(values)
-            results[f'{key}_std'] = np.std(values)
+            # sample std (ddof=1) across folds; 0.0 when only one fold
+            results[f'{key}_std'] = float(np.std(values, ddof=1)) if len(values) > 1 else 0.0
 
     # print summary
     logger.info(f'\n{"="*60}')
