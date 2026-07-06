@@ -1,0 +1,376 @@
+==== FILE: 2008.08692v1.pdf pages=10 ====
+---- PAGE 1 ----
+Enhancing Graph Neural Network-based Fraud Detectors
+against Camouflaged Fraudsters
+Yingtong Dou1, Zhiwei Liu1, Li Sun2, Yutong Deng2, Hao Peng3, Philip S. Yu1
+1Department of Computer Science, University of Illinois at Chicago
+2School of Computer Science, Beijing University of Posts and Telecommunications
+3Beijing Advanced Innovation Center for Big Data and Brain Computing, Beihang University
+{ydou5,zliu213,psyu}@uic.edu,{l.sun,buptdyt}@bupt.edu.cn,penghao@act.buaa.edu.cn
+ABSTRACT
+Graph Neural Networks (GNNs) have been widely applied to fraud
+detection problems in recent years, revealing the suspiciousness of
+nodes by aggregating their neighborhood information via different
+relations. However, few prior works have noticed the camouflage be-
+havior of fraudsters, which could hamper the performance of GNN-
+based fraud detectors during the aggregation process. In this paper,
+we introduce two types of camouflages based on recent empirical
+studies, i.e., the feature camouflage and the relation camouflage.
+Existing GNNs have not addressed these two camouflages, which
+results in their poor performance in fraud detection problems. Al-
+ternatively, we propose a new model named CAmouflage-REsistant
+GNN (CARE-GNN), to enhance the GNN aggregation process with
+three unique modules against camouflages. Concretely, we first
+devise a label-aware similarity measure to find informative neigh-
+boring nodes. Then, we leverage reinforcement learning (RL) to find
+the optimal amounts of neighbors to be selected. Finally, the selected
+neighbors across different relations are aggregated together. Com-
+prehensive experiments on two real-world fraud datasets demon-
+strate the effectiveness of the RL algorithm. The proposed CARE-
+GNN also outperforms state-of-the-art GNNs and GNN-based fraud
+detectors. We integrate all GNN-based fraud detectors as an open-
+source toolbox1. The CARE-GNN code and datasets are available
+at https://github.com/YingtongDou/CARE-GNN.
+CCS CONCEPTS
+• Security and privacy →Web application security; • Com-
+puting methodologies →Neural networks.
+KEYWORDS
+Graph Neural Networks, Fraud Detection, Reinforcement Learning
+ACM Reference Format:
+Yingtong Dou1, Zhiwei Liu1, Li Sun2, Yutong Deng2, Hao Peng3, Philip
+S. Yu1. 2020. Enhancing Graph Neural Network-based Fraud Detectors
+against Camouflaged Fraudsters. In Proceedings of the 29th ACM International
+1https://github.com/safe-graph/DGFraud
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for pr
+---- PAGE 2 ----
+CIKM ’20, October 19–23, 2020, Virtual Event, Ireland
+Dou and Liu, et al.
+Click this 
+l1nk to 
+win 
+200
+Relation I
+Relation II
+Fraudster
+Benign User
+💵
+Figure 1: Two types of fraudster camouflage. (1) Feature cam-
+ouflage: fraudsters add special characters to the text and
+make it delusive for feature-based spam detectors. (2) Rela-
+tion camouflage: center fraudster connects to many benign
+entities under Relation II to attenuate its suspiciousness.
+Relation camouflage: previous works [16, 49] show that crowd
+workers are actively committing opinion fraud on online social
+networks. They can probe the graphs used by defenders [43] and
+adjust their behavior to alleviate the suspiciousness [44]. Specifi-
+cally, these crafty fraudsters camouflage themselves via connecting
+to many benign entities (i.e., posting regular reviews or connecting
+to reputable users). As Figure 1 shows, under Relation II, there are
+more benign entities than fraudsters.
+Directly applying GNNs to graphs with camouflaged fraudsters
+will hamper the neighbor aggregation process of GNNs. As Figure 1
+shows, if we aggregate neighbors with the intriguing reviews as
+node features, it will probably smooth out the suspiciousness of the
+center fraudster [13, 25]. Similarly, if we aggregate all neighbors
+under Relation II, where there are more dissimilar neighbors, it will
+eliminate the suspiciousness of the center fraudster.
+Considering the agility of real-world fraudsters [8, 10], design-
+ing GNN-based detectors that exactly capture these camouflaged
+fraudsters is impractical. Therefore, based on the outcomes of two
+camouflages and the aggregation process of GNNs, we propose
+three neural modules to enhance the GNNs against the camouflages.
+1) For the feature camouflage, we propose a label-aware simi-
+larity measure to find the most similar neighbors based on node
+features. Specifically, we design a neural classifier as a similarity
+measure, which is directly optimized according to experts with
+domain knowledge (i.e., annotated data). 2) For the relation camou-
+flage, we devise a similarity-aware neighbor selector to select
+the similar neighbors of a center node within a relation. Further-
+more, we leverage reinforcement learning (RL) to adaptively find
+the optimal neighbor selection threshold along with the GNN train-
+ing process. 3) We utilize the neighbor filtering thresholds learned
+by RL to formulate a relation-aware neighbor aggregator which
+combines neighborhood information from different relations and
+obtains the final center node representation.
+We integrate above three modules together wit
+---- PAGE 3 ----
+Enhancing Graph Neural Network-based Fraud Detectors against Camouflaged Fraudsters
+CIKM ’20, October 19–23, 2020, Virtual Event, Ireland
+𝑳𝒂𝒚𝒆𝒓 𝟏
+Inter-relation AGG
+𝑺(𝟏)
+𝑺(𝟏)
+𝑺(𝟏)
+Neighbor Selector
+𝓛𝐒𝐢𝐦𝐢
+(𝟏)
+𝑣
+𝑟"
+𝑟#
+𝑟"
+𝒗𝟏
+𝟎
+𝒗𝟐
+𝟎
+𝒗𝟑
+𝟎
+𝒗𝟎
+𝑃
+  𝑓
+𝑝"
+"
+𝑝#
+"
+update
+𝒗𝟏
+𝓛𝐆𝐍𝐍
+Intra-relation AGG
+𝒓𝟏
+𝒓𝟐
+𝒉𝒗,𝟏
+𝟏
+𝒉𝒗,𝟐
+𝟏
+… 𝒗𝟏
+𝟏
+𝒗𝟐
+𝟏
+…
+𝒗𝟑
+𝟏
+…
+𝑳𝒂𝒚𝒆𝒓 𝟐
+Neighbor Selector
+Intra-relation AGG
+Inter-relation AGG
+…
+𝑳𝒂𝒚𝒆𝒓 𝑳
+Neighbor Selector
+Intra-relation AGG
+Inter-relation AGG
+𝒗𝑳
+… 𝒗𝟏
+𝑳
+𝒗𝟐
+𝑳
+…
+𝒗𝟑
+𝑳
+…
+𝓛𝐂𝐀𝐑𝐄
+RL-Module
+RL-Module
+Center node
+Neighbor node
+RL flow
+Aggregation flow
+Similarity Measure
+𝑺(𝟏)
+Aggregation
+Propagation
+RL-Module
+𝑣!
+𝑣"
+𝑣#
+Figure 2: The aggregation process of proposed CARE-GNN at the training phase.
+with the graph composed of multi-relations. The trained models
+are then used to predict the suspiciousness of unlabeled nodes.
+Definition 2.3. GNN-based Fraud Detection. A Graph Neural
+Network (GNN) is a deep learning framework to embed graph-
+structured data via aggregating the information from its neighbor-
+ing nodes [12, 17, 34]. Based on the defined multi-relation graph in
+Definition 2.2, we unify the formulation of GNNs from the perspec-
+tive of neighbor aggregation (as shown in the left side of Figure 2):
+h(l)
+v = σ
+
+h(l−1)
+v
+⊕AGG(l) 
+{h(l−1)
+v′,r : (v,v′) ∈E(l)
+r }|R
+r=1
+
+.
+(1)
+For a center node v, h(l)
+v is the hidden embedding at l-th layer and
+h(0)
+v = xi is the input feature. E(l)
+r
+denotes edges under relation r at
+the l-th layer. h(l−1)
+v′,r is the embedding of neighboring nodev′ under
+relation r. AGG represents the aggregation function that mapping
+the neighborhood information from different relations into a vector,
+e.g., mean aggregation [12] and attention aggregation [34]. ⊕is the
+operator that combines the information of v and its neighboring
+information, e.g., concatenation or summation [12].
+For fraud detection problems, we first construct a multi-relation
+graph based on domain knowledge. Then, the GNN is trained with
+partially labeled nodes supervised by binary classification loss func-
+tions. Instead of directly aggregating the neighbors for all relations,
+we separate the aggregation part as intra-relation aggregation and
+inter-relation aggregation process. During the intra-relation aggre-
+gation process, the embedding of neighbors under each relation is
+aggregated simultaneously. Then, the embeddings for each relation
+are combined during the inter-relation aggregation process. Finally,
+the node embeddings at the last layer are used for prediction.
+3
+PROPOSED MODEL
+3.1
+Model Overview
+The proposed CARE-GNN has three neural modules and its p
+
+==== FILE: 3711896.3737220 (2).pdf pages=11 ====
+---- PAGE 1 ----
+FLAG: Fraud Detection with LLM-enhanced Graph Neural
+Network
+Chengdong Yang
+13811080302@163.com
+Beijing University of Posts and
+Telecommunications
+Beijing, China
+Hongrui Liu
+wlgoodboys@163.com
+Independent Researcher
+Beijing, China
+Daixin Wang
+daixinwang@qq.com
+Independent Researcher
+Beijing, China
+Zhiqiang Zhang
+zzqsmall@gmail.com
+Independent Researcher
+Hangzhou, China
+Cheng Yang
+yangcheng@bupt.edu.cn
+Beijing University of Posts and
+Telecommunications
+Beijing, China
+Chuan Shi∗
+shichuan@bupt.edu.cn
+Beijing University of Posts and
+Telecommunications
+Beijing, China
+Abstract
+Graph-based methods have proven effective in financial fraud de-
+tection by modeling relationships between entities, yet they often
+fail to leverage the rich textual information present in real-world
+data. With the ability to understand semantic information, large lan-
+guage models (LLMs) offer a promising solution to enhance fraud
+detection by incorporating textual data, such as user profiles and
+transaction descriptions. However, integrating LLMs with graph-
+based methods introduces two key challenges: (1) the neighborhood
+camouflage problem, where fraudulent nodes disguise themselves
+within normal network structures, and (2) the input size constraints
+of LLMs, making it difficult to process large, complex graphs with
+extensive textual data. In this paper, we propose a novel frame-
+work, Fraud Detection with LLM-enhanced Graph Neural Networks
+(FLAG), to address these challenges. FLAG integrates LLMs with
+graph-based fraud detection by introducing two main modules: se-
+mantic similarity neighbor sampling, which reduces the input size
+and further alleviates the influence of camouflaged neighbors by
+selecting neighbors having high semantic similarity with the target
+nodes, and LLM-based node enhancement, which extracts discrimi-
+native textual features by LLM to enhance node robustness against
+camouflaged neighbors. To further improve the model, we design a
+fine-tuning approach that enables the LLM to extract discriminative
+text more closely related to the node labels, enhancing the model’s
+ability to differentiate between fraudulent and normal nodes. Ex-
+tensive experiments on public datasets highlight the superiority of
+FLAG, showing average improvements of 3.14% in F1-macro and
+6.97% in AUC. Furthermore, we have deployed FLAG in Alipay’s
+credit risk assessment system and evaluated its performance on a
+∗Corresponding author
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distr
+---- PAGE 2 ----
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+Chengdong Yang et al.
+methods largely fail to incorporate the expressive textual informa-
+tion into their frameworks. This raises a crucial question: how can
+we effectively integrate LLMs with graph-based methods to enhance
+fraud detection in text-rich graphs?
+Integrating LLMs with fraud detection on graphs presents unique
+challenges. Firstly, integrating LLMs with graphs can exacerbate
+the neighborhood camouflage problem, which is inherent to graph-
+based fraud detection tasks. Specifically, as shown in Figure 1, fraud-
+sters often camouflage themselves by employing sophisticated tac-
+tics to mimic regular network patterns [27, 36], e.g., interacting
+with normal users in the social networks or transferring funds
+to normal accounts in transaction networks. This behavior con-
+ceals fraudulent nodes within normal heterophilous neighborhoods,
+resulting in heterophily for fraudulent nodes and homophily for
+normal ones, which violates the homophily [12] inductive bias of
+GNNs. Current methods that combine LLMs with graph-based tasks
+struggle to address this challenge. For instance, InstructGLM [47]
+uses a LLMs-as-Predictors approach with instruction prompts to
+predict node labels. However, due to the dataset’s dominance of
+homophilous normal nodes, it struggles to identify anomalous,
+heterophilous nodes. GAugLLM adopts an LLMs-as-Enhancers strat-
+egy, generating explanations from node text and graph structure
+to enhance the GNN predictor. However, the effectiveness of the
+LLM is limited by the GNN predictor, especially when the GNN
+is inherently homophilic, hindering the LLM’s performance gains.
+Similarly, GraphTranslator [49] aligns graph models with LLMs
+through a translator module, which faces challenges in fraud de-
+tection when aligning LLMs to homophilic GNNs. More details
+about related work can be found in Appendix B. Secondly, LLMs
+have inherent input size constraints [1, 39], making it infeasible to
+process the whole ego-graph directly, especially when dealing with
+highly connected nodes and extensive textual data. Particularly,
+financial fraud detection graphs often exhibit complex relationships
+and extensive textual attributes [24, 32], necessitating strategies to
+reduce the input size while preserving critical information. How-
+ever, most current LLM-based gnns use sampling strategies like
+GraphSAGE [16]’s random sampling [14, 44], but could lose valu-
+able homophilic neighbors and exacerbate the neighbor camouflage
+issue.
+In this paper, we propose a novel framework Fraud Detection
+with LLM-enhanced G
+---- PAGE 3 ----
+FLAG: Fraud Detection with LLM-enhanced Graph Neural Network
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+Figure 2: The framework of the proposed FLAG. Starting with a target node in the original graph, a k-hop subgraph is sampled
+using a semantic similarity neighbor sampling. The text of all nodes in the subgraph is concatenated into a text sequence, which
+is then processed by the LLM to extract both discriminative and residual texts. These texts are encoded with a frozen LM and,
+along with the subgraph structure, passed through shared-parameter skip-GNN modules to obtain target node representations.
+The framework is optimized using three loss functions: Disc. Loss, aligning discriminative text with one-hot labels; Res. Loss,
+aligning residual text with uniform distribution; and Orthog. Loss, ensuring the two representations remain orthogonal.
+Additionally, we give examples of discriminative and residual texts extracted from the original text in the Appendix C.
+mean or max) and 𝜓,𝜙denote differentiable transformation func-
+tions such as multi-layer perceptrons (MLPs). The initial represen-
+tation ℎ0𝑣is the raw feature vector 𝑥𝑣. The final label predictions
+from a GNN are given by:
+𝑍= softmax(GNNΘ(𝐴, X)) ∈R|V|×𝐾,
+(2)
+where 𝐴∈R|V|×|V| is the adjacency matrix, Θ denotes the set of
+trainable parameters, and each row of matrix 𝑍corresponds the
+predicted label distribution of a specific node.
+2.2
+Neighborhood camouflage
+In this paper, neighborhood camouflage refers to the phenomenon
+that the network exhibits distinguish patterns for various classes.
+The phenomenon often arises in the graph-based fraud detection
+scenario, which is a highly imbalanced binary classification task. In
+this scenario, as shown in Figure 1, the fraudulent users actively or
+passively camouflage themselves by interacting with normal nodes,
+leading to heterophily, while the normal users remains homophily.
+The neighborhood camouflage violates the general homophily as-
+sumption, becoming a significant challenge for fraud detection.
+3
+Method
+In this section, we propose FLAG, a novel approach designed for
+fraud detection by integrating LLMs with graph-based methods.
+FLAG consists of two main components: a semantic similarity neigh-
+bor sampling module and an LLM-based node enhancement module.
+Given a text graph, FLAG first employs semantic similarity neigh-
+bor sampling to reduce input size and the influence of heterophily
+neighbors. The sampled graph is then processed by the LLM-based
+node enhancement module, which extracts discriminative text ex-
+pected to strongly correlate with the as
+

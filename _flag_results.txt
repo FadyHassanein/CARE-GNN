@@ -1,0 +1,1037 @@
+==PAGE 1==
+FLAG: Fraud Detection with LLM-enhanced Graph Neural
+Network
+Chengdong Yang
+13811080302@163.com
+Beijing University of Posts and
+Telecommunications
+Beijing, China
+Hongrui Liu
+wlgoodboys@163.com
+Independent Researcher
+Beijing, China
+Daixin Wang
+daixinwang@qq.com
+Independent Researcher
+Beijing, China
+Zhiqiang Zhang
+zzqsmall@gmail.com
+Independent Researcher
+Hangzhou, China
+Cheng Yang
+yangcheng@bupt.edu.cn
+Beijing University of Posts and
+Telecommunications
+Beijing, China
+Chuan Shi∗
+shichuan@bupt.edu.cn
+Beijing University of Posts and
+Telecommunications
+Beijing, China
+Abstract
+Graph-based methods have proven effective in financial fraud de-
+tection by modeling relationships between entities, yet they often
+fail to leverage the rich textual information present in real-world
+data. With the ability to understand semantic information, large lan-
+guage models (LLMs) offer a promising solution to enhance fraud
+detection by incorporating textual data, such as user profiles and
+transaction descriptions. However, integrating LLMs with graph-
+based methods introduces two key challenges: (1) the neighborhood
+camouflage problem, where fraudulent nodes disguise themselves
+within normal network structures, and (2) the input size constraints
+of LLMs, making it difficult to process large, complex graphs with
+extensive textual data. In this paper, we propose a novel frame-
+work, Fraud Detection with LLM-enhanced Graph Neural Networks
+(FLAG), to address these challenges. FLAG integrates LLMs with
+graph-based fraud detection by introducing two main modules: se-
+mantic similarity neighbor sampling, which reduces the input size
+and further alleviates the influence of camouflaged neighbors by
+selecting neighbors having high semantic similarity with the target
+nodes, and LLM-based node enhancement, which extracts discrimi-
+native textual features by LLM to enhance node robustness against
+camouflaged neighbors. To further improve the model, we design a
+fine-tuning approach that enables the LLM to extract discriminative
+text more closely related to the node labels, enhancing the model’s
+ability to differentiate between fraudulent and normal nodes. Ex-
+tensive experiments on public datasets highlight the superiority of
+FLAG, showing average improvements of 3.14% in F1-macro and
+6.97% in AUC. Furthermore, we have deployed FLAG in Alipay’s
+credit risk assessment system and evaluated its performance on a
+∗Corresponding author
+Permission to make digital or hard copies of all or part of this work for personal or
+classroom use is granted without fee provided that copies are not made or distributed
+for profit or commercial advantage and that copies bear this notice and the full citation
+on the first page. Copyrights for components of this work owned by others than the
+author(s) must be honored. Abstracting with credit is permitted. To copy otherwise, or
+republish, to post on servers or to redistribute to lists, requires prior specific permission
+and/or a fee. Request permissions from permissions@acm.org.
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+© 2025 Copyright held by the owner/author(s). Publication rights licensed to ACM.
+ACM ISBN 979-8-4007-1454-2/2025/08
+https://doi.org/10.1145/3711896.3737220
+real-world dataset. The results indicate a 0.9% improvement in the
+KS criterion, further underscoring FLAG’s effectiveness.
+CCS Concepts
+• Computing methodologies →Artificial intelligence.
+Keywords
+Fraud Detection, Graph Neural Networks, Large Language Model
+ACM Reference Format:
+Chengdong Yang, Hongrui Liu, Daixin Wang, Zhiqiang Zhang, Cheng Yang,
+and Chuan Shi. 2025. FLAG: Fraud Detection with LLM-enhanced Graph
+Neural Network. In Proceedings of the 31st ACM SIGKDD Conference on
+Knowledge Discovery and Data Mining V.2 (KDD ’25), August 3–7, 2025,
+Toronto, ON, Canada. ACM, New York, NY, USA, 11 pages. https://doi.org/
+10.1145/3711896.3737220
+1
+Introduction
+With the rapid development of Internet services, fraudulent activi-
+ties have become increasingly sophisticated and widespread [2, 19].
+Fraudsters often disguise themselves as legitimate users to bypass
+antifraud mechanisms, spread misinformation, or exploit sensitive
+user data. Graph-based methods have emerged as an effective ap-
+proach for financial fraud detection, modeling entities and their
+relationships in a graph to identify suspicious patterns [35, 42].
+These methods are particularly effective when fraudsters form dis-
+tinct structures, such as clusters, within the graph.
+Recently, large language models (LLMs) have shown remark-
+able abilities in understanding textual semantics [4, 38], leading to
+the integration of LLMs with graphs for various tasks on text-rich
+graphs [5, 21]. For example, in the recommendation domain, LLM-
+Rec [43] utilizes text-generated profiles to filter noisy interactions
+and enrich node embeddings which significantly improves recom-
+mendation performance. Similarly, in graph contrastive learning,
+GAugLLM [10] leverages LLMs to generate enhanced features and
+graph structures, addressing the limitations of traditional methods
+that overlook textual semantics. These advancements demonstrate
+the potential of LLMs in improving graph-based approaches. In the
+context of financial fraud detection, textual data, such as user pro-
+files or transaction descriptions, also provides critical information
+for identifying fraudulent behaviors [3, 15, 45]. However, existing
+5150
+
+==PAGE 2==
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+Chengdong Yang et al.
+methods largely fail to incorporate the expressive textual informa-
+tion into their frameworks. This raises a crucial question: how can
+we effectively integrate LLMs with graph-based methods to enhance
+fraud detection in text-rich graphs?
+Integrating LLMs with fraud detection on graphs presents unique
+challenges. Firstly, integrating LLMs with graphs can exacerbate
+the neighborhood camouflage problem, which is inherent to graph-
+based fraud detection tasks. Specifically, as shown in Figure 1, fraud-
+sters often camouflage themselves by employing sophisticated tac-
+tics to mimic regular network patterns [27, 36], e.g., interacting
+with normal users in the social networks or transferring funds
+to normal accounts in transaction networks. This behavior con-
+ceals fraudulent nodes within normal heterophilous neighborhoods,
+resulting in heterophily for fraudulent nodes and homophily for
+normal ones, which violates the homophily [12] inductive bias of
+GNNs. Current methods that combine LLMs with graph-based tasks
+struggle to address this challenge. For instance, InstructGLM [47]
+uses a LLMs-as-Predictors approach with instruction prompts to
+predict node labels. However, due to the dataset’s dominance of
+homophilous normal nodes, it struggles to identify anomalous,
+heterophilous nodes. GAugLLM adopts an LLMs-as-Enhancers strat-
+egy, generating explanations from node text and graph structure
+to enhance the GNN predictor. However, the effectiveness of the
+LLM is limited by the GNN predictor, especially when the GNN
+is inherently homophilic, hindering the LLM’s performance gains.
+Similarly, GraphTranslator [49] aligns graph models with LLMs
+through a translator module, which faces challenges in fraud de-
+tection when aligning LLMs to homophilic GNNs. More details
+about related work can be found in Appendix B. Secondly, LLMs
+have inherent input size constraints [1, 39], making it infeasible to
+process the whole ego-graph directly, especially when dealing with
+highly connected nodes and extensive textual data. Particularly,
+financial fraud detection graphs often exhibit complex relationships
+and extensive textual attributes [24, 32], necessitating strategies to
+reduce the input size while preserving critical information. How-
+ever, most current LLM-based gnns use sampling strategies like
+GraphSAGE [16]’s random sampling [14, 44], but could lose valu-
+able homophilic neighbors and exacerbate the neighbor camouflage
+issue.
+In this paper, we propose a novel framework Fraud Detection
+with LLM-enhanced Graph Neural Network (FLAG) designed to
+integrate LLM into graph-based fraud detection while addressing
+the aforementioned challenges. The framework consists of two key
+modules: semantic similarity neighbor sampling and LLM-based
+node enhancement. The semantic similarity neighbor sampling
+module reduces the influence of camouflaged neighbors by select-
+ing neighbors having high semantic similarity with the target nodes.
+This approach ensures that the node’s neighborhood retains criti-
+cal connections while filtering out those that might dilute its rep-
+resentation, particularly for fraud nodes camouflaged by normal
+neighbors. Moreover, this sampling strategy helps reduce the input
+size, facilitating the application of the LLM. To further enhance the
+robustness against camouflaged neighbors, we introduce an LLM-
+based node enhancement strategy to extract discriminative text—the
+portions of a node’s text most strongly correlated with its label.
+This discriminative text is then encoded using a skip-GNN, where
+we introduce a skip connection into the traditional GNN to enhance
+Figure 1: The illustration of neighborhood camouflage.
+personalized information. To optimize the LLM’s ability to extract
+such discriminative text, we design an auxiliary task to generate
+residual text, which complements discriminative text by being less
+correlated with the label. By encouraging the discriminative text
+to exhibit stronger label relevance and the residual text to remain
+label-independent, LLM effectively removes noisy information from
+raw text and highlights critical discriminative features. Extensive
+experiments on the public datasets validate the effectiveness of
+FLAG in fraud detection, with average improvements of 3.14% in
+F1-macro and 6.97% in AUC. In light of the superior performance,
+we have deployed FLAG in Alipay’s credit risk assessment system
+and evaluated its performance on a real-world dataset. The results
+indicate a 0.9% improvement in the KS criterion, 1.4% in F1-macro
+and 0.47% in AUC, further underscoring FLAG’s effectiveness. In
+summary, the main contributions are highlighted as follows:
+• We are the first to integrate LLM with GNN for fraud detection,
+utilizing textual semantic information to enhance GNN.
+• To address the challenges of neighborhood camouflage and in-
+put size constraints, we design two modules: semantic similarity
+neighbor sampling to filter camouflaged neighbors while reduc-
+ing the input size and LLM-based node enhancement to extract
+discriminative text for enhancing node robustness. Additionally,
+we fine-tune the LLM to improve its performance, making nodes
+more distinguishable in fraud detection.
+• Extensive experiments on public and industry datasets demon-
+strate the superiority of FLAG, in detecting fraudulent nodes,
+especially on text-rich graphs.
+2
+Preliminary
+2.1
+Graph Neural Network
+Consider a text graph G = (V, E, X) with node texts T, where V
+represents the set of nodes, E represents the set of edges, and X
+represents the node features. Each node 𝑣∈V is associated with a
+feature vector 𝑥𝑣∈X and ground-truth label 𝑦𝑣∈Y = {1, ..., 𝐾}.
+Each edge (𝑣,𝑢) ∈E represents the relation between 𝑣and 𝑢.
+GNN is a parametric model designed to compute node represen-
+tations by aggregating information from neighbors. At each layer 𝑙,
+the representation ℎ𝑙𝑣of node 𝑣will be updated by combining the
+representations of 𝑣and its neighbors in the previous layer:
+ℎ𝑙
+𝑣= 𝜓𝑙(ℎ𝑙−1
+𝑣
+,
+⊕
+𝑢∈N(𝑣)𝜙𝑙(ℎ𝑙−1
+𝑣
+,ℎ𝑙−1
+𝑢
+)),
+(1)
+where N (𝑣) = {𝑢|(𝑢, 𝑣) ∈E} is the neighbor set of node 𝑣, ⊕de-
+notes a differentiable, permutation-invariant function (e.g., sum,
+5151
+
+==PAGE 4==
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+Chengdong Yang et al.
+(a) Comparison of subgraph homophily
+across sampling strategies.
+(b) Stability of discriminative text vs.
+raw text.
+Figure 3: Semantic similarity neighbor sampling and LLM-
+based node enhancement for fraud detection.
+the similarity between the central node and its neighbors based on
+shallow features, and then selects the top-N neighbors to form the
+final subgraph. SS*, compared to FS, replaces shallow features [30]
+with text-based features for similarity calculation. Detailed sam-
+pling settings are provided in Section 4.1. Moreover, the average
+subgraph edge homophily measures the fraction of edges in a graph
+which connects nodes that have the same class label, which is for-
+malized as follows:
+ℎ𝑜𝑚𝑜=
+Í
+(𝑢,𝑣)∈E I(𝑦(𝑢) = 𝑦(𝑣))
+|E|
+.
+(5)
+where I(𝑦(𝑢) = 𝑦(𝑣)) is an indicator function that is 1 if the class
+labels of nodes 𝑢and 𝑣are the same, and 0 otherwise; |E| is the
+total number of edges in the graph.
+The results are visualized in Figure 3(a). We observe that the
+homophily of RS is similar to that of the NS baseline. FS performs
+slightly better, but still falls behind SS*. And homophily of SS* is
+lower than that of our proposed SS. This demonstrates that: (1) RS
+is ineffective in addressing neighbor camouflage; (2) the raw node
+text contains more complete information than the shallow feature;
+and (3) adopting a threshold-based filtering strategy is beneficial
+for preserving critical information.
+3.2
+LLM-Based Node Enhancement
+To further counter the effects of neighbor camouflage, we focus on
+enhancing the robustness of the node itself. In traditional GNNs,
+during feature aggregation, the features from neighboring normal
+nodes can overwhelm the features of a fraudulent node, causing a
+loss of the node’s distinct identity. By strengthening the connection
+between a node’s features and its label, we can more effectively
+combat neighbor camouflage. To achieve this, we utilize an LLM
+to extract discriminative text—the portions of a node’s text most
+strongly correlated with its label. Additionally, we implement a
+skip-GNN that incorporates a bypass from the node features to the
+final representation to increase the personalized information.
+3.2.1
+Discriminative text extraction. To extract this discriminative
+text, we turn to LLM, which are well-suited for understanding and
+distilling meaningful semantic information from text. LLMs can
+identify and retain the most label-relevant aspects of a node’s text,
+filtering out irrelevant text. Specifically, we apply the LLM to dis-
+till the raw node text 𝑡𝑣into a discriminative representation 𝑡𝐷𝑣
+that highlights the node’s intrinsic properties, enabling a clearer
+distinction between fraudulent and normal nodes. Table 1 illus-
+trates the format and an example of the prompt used for extracting
+discriminative text from node information.
+Table 1: Format and example of the discriminative text
+prompt on Reddit dataset.
+Disc. Prompt:
+<Dataset Description>. <Task Description>. <Ensurance>.
+Example:
+You are provided with a list of Reddit users’ posts. Each
+user is classified as either popular or normal based on their
+interactions and content. Your task is to generate a brief
+discriminative text for each user that directly relates to
+distinguishing them as either popular or normal. Ensure
+that the generated text highlights specific features that help
+differentiate the user’s classification while avoiding any
+general or irrelevant information.
+To validate the correlation between labels and the LLM-generated
+discriminative text, we compare its stability against the raw text
+under neighbor perturbations on Reddit [25]. Intuitively, for each
+targeted node, if its feature is strongly correlated with the label,
+it should still maintain superior performance even if most of its
+neighbors are replaced. Put simply, we first extract discriminative
+text and train two GNN models—one using the raw text and the
+other using discriminative text. We then perturb the test set by
+replacing the text of same-class neighbors with randomly selected
+text from nodes of the opposite class. We use the GCN model for
+this experiment, and detailed experimental settings are provided
+in the Section 4.1. The model’s performance is finally evaluated on
+these disturbed datasets.
+Results shown in Figure 3(b) indicate that, as node heterophily
+increases, the AUC of the model using raw text declines significantly
+after GNN aggregation, while the model using discriminative text
+remains more stable. This demonstrates that discriminative text is
+robustness against neighbor perturbation and strongly correlated
+with the node’s label.
+3.2.2
+Skip-GNN. To further address the issue of heterophily of
+fraudulent users, we incorporate skip connections into the GNN.
+The skip connections allow the node feature to be included in the
+final representation without passing through the aggregation pro-
+cess, ensuring that the node’s label-relevant features are preserved.
+This is crucial for distinguishing fraudulent nodes from normal
+nodes, as it helps prevent the "dilution" of the fraudulent node’s
+features by its neighbors.
+In the proposed skip-connected GNN, we add a direct connection
+to the node feature X, so that the final node representation Z is a
+combination of both the aggregated features and the node features:
+Z = GNN(X, A) + Linear(X).
+(6)
+This ensures that the node’s own features are preserved, providing
+more stable representations for nodes, particularly fraudulent ones,
+even in the presence of neighborhood dilution.
+3.3
+Fine-Tuning Strategy
+To enhance the discriminative power of the extracted text features,
+we propose a fine-tuning strategy for the LLM that is specifically
+tailored to the task of fraud detection in graph data. The core idea
+behind this approach is to introduce an auxiliary task that focuses
+on extracting the residual text—the portion of node text that is
+5153
+
+==PAGE 6==
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+Chengdong Yang et al.
+space? Q4: What is the impact of hyper-parameters on the final
+performance of FLAG?
+4.1
+Experimental Setup
+4.1.1
+Datasets. In this paper, we utilize two types of datasets for
+our experiments. The first dataset is a real-world industrial dataset
+named Huabei, derived from the Huabei financial product in Alipay.
+This dataset comprises 13 million nodes, each representing a unique
+Alipay user. The associated attributes include user behaviors such
+as transfers, transactions, and credit activities. The constructed
+graph consists of 120 million edges, illustrating social connections
+between users. Additionally, the dataset is labeled based on whether
+users have overdue payments.
+Additionally, for the public fraud detection datasets, we note
+that most of them, such as Yelp-Fraud [8], Amazon-Fraud [8], T-
+Finance [36] and T-Social [36], lack textual information, which
+poses a challenge for applying fraud detection methods that lever-
+age rich-text graphs. To overcome this limitation, we construct a
+dataset tailored to fraud detection by utilizing existing social net-
+work datasets that contain textual data. Specifically, we use two
+social network datasets: Reddit [25] and Instagram [25]. The Reddit
+dataset consists of users as nodes and edges representing replies
+between users. The raw text associated with each node is derived
+from the content of the user’s last three posts on Reddit. Each node
+is labeled as either popular or normal, based on the user’s social in-
+teractions and engagement. The Instagram dataset consists of users
+as nodes and edges representing following relationships. The raw
+text for each node is derived from the user’s personal introduction.
+Each node is labeled as either commercial or normal, based on the
+user’s account type. Both datasets originally contain an approxi-
+mately equal number of nodes in each class, but fraud detection
+tasks generally require imbalanced datasets. To address this, we
+treat the popular category in Reddit and the commercial category
+in Instagram as the minority class. The minority class nodes are
+randomly selected so that the final ratio between the minority and
+majority classes is about 1:10.
+To validate that the datasets we constructed are well-suited for
+fraud detection tasks, we calculate the homophily score of every
+node on Reddit and Instagram, defined as the fraction of edges
+connected to nodes of the same class. The homophily scores are
+divided into ten bins, ranging from 0.1 to 1.0, to represent varying
+levels of homophily. For both normal and fraudulent nodes, we
+compute the proportion of nodes within each homophily bin rela-
+tive to the total number of nodes in their respective classes. This
+analysis provides a detailed view of the neighborhood structure for
+each class, allowing us to assess whether the constructed datasets
+reflect the expected characteristics of fraud detection tasks.
+The results in Figure 5 reveal a clear distinction in the homophily
+distributions of normal and fraudulent nodes across both datasets.
+Fraudulent nodes are predominantly found in lower homophily bins,
+indicating that they are often connected to normal nodes. In con-
+trast, normal nodes are concentrated in higher homophily bins, con-
+firming their tendency to form connections within their own class.
+This trend is especially pronounced in the Instagram dataset. Fur-
+thermore, similar experiments [35] conducted on the non-textual
+fraud detection datasets, Yelp-Fraud and Amazon-Fraud, also show
+(a) Reddit.
+(b) Instagram.
+Figure 5: Homophily distributions of fraudulent and normal
+nodes on Reddit and Instagram.
+comparable patterns, confirming that the network structures of the
+datasets we constructed are suitable for fraud detection tasks.
+4.1.2
+Baselines and Implementation. We compare FLAG against
+seven baseline GNN models, categorized into two groups: tradi-
+tional GNN models (GCN [22] and GAT [40]) and GNN models
+specifically designed for fraud detection tasks (GeniePath [28],
+CARE-GNN [8], BWGNN [36], DGA-GNN [9], and PMP [52]). We
+follow the experimental setup used in BWGNN [36], using F1-macro
+and AUC [7] as evaluation metrics for public datasets. The model
+with the highest F1-macro score on the validation set is selected for
+testing on the test set. Additionally, we employ the Kolmogorov-
+Smirnov (KS) statistic as supplement metric, which is a widely
+used metric in the financial industry, particularly for evaluating the
+performance of credit scoring models. Mathematically, KS can be
+calculated by 𝐾𝑆= max |𝐹1(𝑥) −𝐹2(𝑥)|, which measures the maxi-
+mum difference between the cumulative distribution functions of
+two sample distributions—typically the distribution of scores for the
+positive (e.g., defaulters, 𝐹1(𝑥)) and negative (e.g., non-defaulters
+𝐹2(𝑥)) classes.
+All models are configured with two layers and a hidden layer
+size of 64. To enable testing on graphs of varying sizes, we evaluate
+the models on 2-hop subgraphs of each node, employing a training
+strategy similar to GraphSAGE. During training, we accumulate
+the loss of 10 subgraphs before backpropagation. For sampling, we
+set the similarity threshold to 0 and select the top-10 most similar
+nodes to form each subgraph. We use the Adam optimizer with
+a fixed learning rate of 0.01, employing early stopping to prevent
+overfitting. For the public datasets, each model is evaluated 25 times
+with 5 random seeds and 5 random initializations to ensure robust-
+ness. For the industrial dataset, we conducted the training process
+only once instead of repeating it to report average performance due
+to the time constraint. Industry practice has also shown us that re-
+sults from a single training session on large industrial datasets can
+be reliable. We use Gemma-9b-it [37] as LLM model with LoRA [18]
+used for fine-tuning and Sentence-BERT [34] as LM.
+4.1.3
+Model Deployment. The LLM fine-tuned in Section 3.3 has
+been deployed for use on Alipay, utilizing an A100 GPU with 80GB
+of memory. To ensure optimal online inference performance, the
+deployment uses a total of 8 GPUs across both preproduction and
+online environments. Notably, our model fully meets the needs of
+monthly online prediction updates. Additionally, the GNN module
+is deployed on a CPU cluster, capable of generating predictions
+within a day.
+5155
+
+==PAGE 7==
+FLAG: Fraud Detection with LLM-enhanced Graph Neural Network
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+(a) GCN
+(b) GAT
+(c) GeniePath
+(d) CARE-GNN
+(e) BWGNN
+(f) DGA-GNN
+(g) PMP
+(h) FLAGGCN
+(i) FLAGGAT
+(j) FLAGGenie
+(k) FLAGCARE
+(l) FLAGBWGNN
+(m) FLAGDGA
+(n) FLAGPMP
+Figure 6: Visualization. The red and blue nodes represent fraud nodes and normal nodes respectively.
+Table 3: The performance of FLAG on the industrial dataset
+(KS, AUC, F1-macro in percentage). GNN† refers to GNN
+trained using raw text embeddings and FLAG* corresponds
+to the performance of FLAG after fine-tuning.
+Datasets
+Huabei
+Metric
+KS
+F1-macro
+AUC
+GCN†
+76.42
+22.76
+94.80
+GAT†
+76.59
+22.89
+94.87
+Geniepath†
+76.91
+23.28
+94.97
+CARE-GNN†
+76.92
+23.28
+94.98
+BWGNN†
+76.85
+23.12
+94.93
+DGA-GNN†
+76.84
+23.15
+94.92
+PMP†
+76.96
+23.32
+95.02
+FLAG
+77.78
+24.48
+95.41
+FLAG∗
+77.86
+24.72
+95.49
+4.2
+Main Result (Q1)
+The experimental results for both the industrial and public datasets
+are presented in Table 3 and Table 4, respectively. Notably, for the
+public datasets, we apply FLAG to a variety of GNN backbones
+to demonstrate its model-agnostic nature and its potential as a
+fundamental data augmentation strategy across different GNNs.
+For clarity, we employ the following notations to convey their
+respective meanings: "baseline" indicates the vanilla GNN model
+utilizing shallow embeddings. The notation "+text" refers to the
+model trained with raw text embeddings. "+FLAG" signifies the
+performance of FLAG in a zero-shot context, whereas "+FLAG*"
+represents the performance of FLAG after fine-tuning. In contrast,
+for the industrial dataset, we fix the backbone to GeniePath [28]
+due to its resource efficiency and the stability it provides for month-
+to-month predictions. We have the following observations:
+• Our proposed FLAG consistently outperforms all the baselines by
+a considerable margin across most cases of all the datasets. For
+instance, on the industrial dataset, FLAG achieves improvement
+of 0.9% in KS, 1.4% in F1-macro and 0.47% in AUC on industry
+datasets compared with its backbone Geniepath. Additionally,
+on the public dataset, FLAG obtain the average gains of 3.14% in
+F1-macro and 6.97% in AUC. These results collectively highlight
+the effectiveness of FLAG through its efficient sampling approach
+and the integration of LLM for extracting discriminative text to
+enhance its robustness against camouflaged neighbors.
+Table 4: The performance of FLAG with different backbones
+on Reddit and Instagram (AUC and F1-macro in percentage).
+Models
+Variant
+Reddit
+Instagram
+F1-macro
+AUC
+F1-macro
+AUC
+GCN
+baseline
+45.460.01
+50.320.26
+47.880.96
+52.611.80
++text
+45.840.36
+57.821.94
+47.290.01
+55.740.73
++FLAG
+48.191.02
+60.180.79
+48.050.69
+56.310.83
++FLAG*
+48.721.59
+60.880.68
+49.791.08
+55.451.21
+GAT
+baseline
+46.660.96
+52.662.25
+49.211.38
+51.531.12
++text
+48.262.23
+59.320.29
+48.310.98
+54.690.76
++FLAG
+49.701.76
+60.611.20
+49.131.23
+54.970.75
++FLAG*
+50.202.33
+60.571.03
+50.651.61
+55.981.67
+GeniePath
+baseline
+45.460.01
+52.181.48
+47.310.05
+51.223.16
++text
+46.841.89
+56.911.85
+47.290.01
+52.452.31
++FLAG
+48.302.24
+59.430.55
+48.411.51
+55.590.85
++FLAG*
+48.692.97
+59.741.68
+48.281.25
+56.242.10
+CARE-GNN
+baseline
+45.460.01
+51.351.62
+47.290.01
+52.071.95
++text
+47.661.59
+56.721.38
+48.051.07
+54.920.38
++FLAG
+50.780.95
+58.430.65
+49.641.74
+55.790.58
++FLAG* 51.952.21
+58.741.40
+50.240.46
+56.401.29
+BWGNN
+baseline
+45.470.01
+53.822.49
+47.280.01
+51.522.43
++text
+48.761.54
+57.561.53
+47.610.72
+54.100.71
++FLAG
+50.932.16
+58.892.50
+48.550.32
+56.330.72
++FLAG*
+51.912.38
+59.201.09
+49.351.45
+57.190.28
+DGA-GNN
+baseline
+45.460.01
+50.100.53
+47.290.01
+50.860.48
++text
+45.490.11
+59.591.60
+47.290.01
+56.281.07
++FLAG
+48.772.18
+61.050.71
+48.530.42
+56.730.66
++FLAG*
+49.500.83
+61.610.78
+48.950.68
+57.201.03
+PMP
+baseline
+46.311.04
+50.160.12
+47.501.56
+50.630.52
++text
+47.211.18
+59.790.43
+48.290.01
+56.051.27
++FLAG
+48.911.30
+61.320.66
+48.480.82
+57.100.62
++FLAG*
+50.141.48
+61.800.99
+49.761.64
+57.671.09
+• In the zero-shot setting, FLAG continues to show substantial
+performance improvements over GNNs that rely solely on raw
+text embeddings. Specifically, on the industrial dataset, FLAG
+enhances its backbone with improvements of 0.95% in KS, 1.44%
+in F1-macro, and 0.52% in AUC. On the public dataset, FLAG
+achieves average gains of 1.58% in F1-macro and 1.48% in AUC.
+This improvement is attributed to the zero-shot generalization
+capabilities of large language models (LLMs) across tasks and
+5156
+
+==PAGE 8==
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+Chengdong Yang et al.
+Table 5: Ablation studies of FLAG with different backbones
+on Reddit and Instagram (AUC and F1-macro in percentage).
+Backbone
+Variant
+Reddit
+Instagram
+SS LLM SG
+F1-macro
+AUC
+F1-macro
+AUC
+GCN
+✓
+47.922.77
+59.601.56
+47.840.79
+55.520.46
+✓
+✓
+48.110.66
+60.070.64
+47.970.53
+55.850.38
+✓
+✓
+48.190.51
+59.812.11
+47.990.31
+56.030.65
+GAT
+✓
+49.032.69
+59.960.41
+48.761.83
+54.201.64
+✓
+✓
+49.160.63
+59.801.64
+48.790.98
+54.790.25
+✓
+✓
+49.731.10
+60.271.02
+49.282.02
+54.271.02
+GeniePath
+✓
+47.472.14
+58.350.26
+47.340.79
+54.380.61
+✓
+✓
+48.382.52
+58.310.36
+47.540.48
+55.241.94
+✓
+✓
+48.131.74
+59.242.99
+47.880.96
+55.611.80
+CAREGNN
+✓
+50.191.10
+57.390.64
+48.471.04
+55.450.64
+✓
+✓
+50.482.29
+57.940.60
+48.700.42
+55.470.65
+✓
+✓
+50.501.30
+57.900.54
+48.501.48
+55.830.48
+BWGNN
+✓
+49.232.05
+58.462.36
+48.280.24
+55.540.25
+✓
+✓
+50.192.00
+58.761.82
+47.640.79
+56.860.41
+✓
+✓
+50.192.89
+58.631.76
+48.290.81
+56.272.15
+contexts, making FLAG particularly valuable in scenarios where
+labeled data is limited or unavailable.
+• Compared with FLAG, the fine-tuned FLAG* yields an average
+increase of 0.84% in F1-macro and 0.42% in AUC. This suggests
+that the fine-tuning process effectively strengthens the relation-
+ship between the extracted text and the node labels, thereby
+enhancing the robustness and distinguishability of nodes.
+4.3
+Ablation Studies (Q2)
+In this section, we conduct ablation experiments to assess the effec-
+tiveness of each component in FLAG. The variants tested include
+SS (semantic similarity sampling), LLM (using LLM for extracting
+discriminative text), and SG (using skip-GNN). For the sake of fair-
+ness, experiments without LLM use the raw text encoding as node
+features, and the LLM used in these experiments is not fine-tuned.
+The results, summarized in Table 5, demonstrate that each com-
+ponent in FLAG contributes effectively to the overall performance.
+First, when comparing the performance of the variant using both
+SS and SG (without LLM) with the zero-shot results, we observe
+that the LLM module improves the F1-macro and AUC by 1.01%
+and 0.31%, respectively. Second, when comparing the variant using
+SS and LLM (without SG) to the zero-shot performance, we find
+that the SG module leads to improvements in F1-macro and AUC
+by 0.33% and 0.74%, respectively. Finally, when comparing the per-
+formance of the variant using only SG with the combination of
+SS and SG, we observe that SS further enhances the performance,
+increasing the F1-macro and AUC by 0.15% and 0.66%, respectively.
+In summary, the ablation studies confirm that each component of
+FLAG plays a crucial role in enhancing performance.
+4.4
+Visualization (Q3)
+In this section, we visualize how FLAG enhances the discriminabil-
+ity of node embeddings compared to baseline GNN models on the
+Reddit dataset. Specifically, we obtain 32-dimensional node embed-
+dings from each method and use t-SNE to project these embeddings
+into 2D space. Given the 1:10 class ratio in the test set, for better
+(a) N
+(b) 𝛿
+Figure 7: Sensitive analysis of hyper-parameters.
+visualization, we select all minority class nodes and randomly sam-
+ple 1/3 of the majority class nodes. Notably, the LLM used in this
+experiment was not fine-tuned.
+As shown in Figure 6, the node embeddings generated by the
+basseline GNN models are highly mixed. However, when FLAG
+is applied, the distinction between the two classes becomes much
+clearer, especially for GCN, GAT, CARE-GNN, BWGNN, and PMP.
+This demonstrates that FLAG successfully enhances the discrim-
+inability of node embeddings, validating the effectiveness of FLAG.
+4.5
+Hyper-parameter Sensitivity (Q4)
+In this section, we detail the rationality of the parameter settings
+(i.e., selecting the top 10 nodes with the threshold to be 0) illustrated
+above. We use GCN as the backbone and assess the impact on
+GNN†’s AUC performance by varying one hyper-parameter while
+keeping others fixed.
+Figure 7(a) shows the performance variation of GCN† with dif-
+ferent values of top-𝑁({5, 10, 15, 20}). It is observed that the AUC
+of GCN† is slightly lower when 𝑁= 5 compared to 𝑁= 10, and it
+decreases when 𝑁is set to 15 and 20. This is because a larger 𝑁
+leads to the sampled subgraph including more normal nodes, which
+diminishes the focus on fraudulent nodes. When 𝑁is reduced, this
+issue is mitigated, but setting 𝑁too small may result in insufficient
+neighbor information, causing performance degradation.
+Figure 7(b) shows the impact of varying the similarity threshold𝛿
+across values of {0.4, 0.2, 0, -0.2, -0.4}. We observe that when 𝛿= 0.2
+or𝛿=-0.2, the performance remains similar to that of𝛿= 0. However,
+at 𝛿= 0.4 and 𝛿= −0.4, performance significantly declines. This is
+consistent with the previous conclusion: a threshold that is too high
+reduces the central node’s neighbor information, while a threshold
+that is too low increases heterophily in the fraudulent subgraph,
+leading to performance loss.
+5
+Conclusion
+In this paper, we propose a novel framework FLAG that integrates
+LLMs with graph-based methods for fraud detection. FLAG ad-
+dresses two major challenges: the neighborhood camouflage prob-
+lem inherent in fraud detection graphs and the input size constraints
+of LLMs. By leveraging semantic similarity neighbor sampling strat-
+egy and LLM-based node enhancement module, we significantly
+improve the performance of various GNNs in fraud detection tasks.
+While this work focuses on static graphs to tackle financial fraud
+detection, there is significant potential in exploring dynamic graphs
+for more adaptive and real-time detection. In future work, we will
+investigate the use of dynamic graphs to enable real-time fraud
+detection, capturing evolving relationships over time.
+5157
+
+==PAGE 10==
+KDD ’25, August 3–7, 2025, Toronto, ON, Canada
+Chengdong Yang et al.
+[47] Ruosong Ye, Caiqi Zhang, Runhui Wang, Shuyuan Xu, and Yongfeng Zhang. 2024.
+Language is all a graph needs. In Findings of the Association for Computational
+Linguistics: EACL 2024. 1955–1973.
+[48] Ge Zhang, Zhao Li, Jiaming Huang, Jia Wu, Chuan Zhou, Jian Yang, and Jianliang
+Gao. 2022. efraudcom: An e-commerce fraud detection system via competitive
+graph neural networks. ACM Transactions on Information Systems (TOIS) 40, 3
+(2022), 1–29.
+[49] Mengmei Zhang, Mingwei Sun, Peng Wang, Shen Fan, Yanhu Mo, Xiaoxiao Xu,
+Hong Liu, Cheng Yang, and Chuan Shi. 2024. GraphTranslator: Aligning Graph
+Model to Large Language Model for Open-ended Tasks. In Proceedings of the
+ACM on Web Conference 2024. 1003–1014.
+[50] Jianan Zhao, Meng Qu, Chaozhuo Li, Hao Yan, Qian Liu, Rui Li, Xing Xie, and
+Jian Tang. 2022. Learning on large-scale text-attributed graphs via variational
+inference. arXiv preprint arXiv:2210.14709 (2022).
+[51] Jiong Zhu, Yujun Yan, Lingxiao Zhao, Mark Heimann, Leman Akoglu, and Danai
+Koutra. 2020. Beyond homophily in graph neural networks: Current limitations
+and effective designs. Advances in neural information processing systems 33 (2020),
+7793–7804.
+[52] Wei Zhuo, Zemin Liu, Bryan Hooi, Bingsheng He, Guang Tan, Rizal Fathony, and
+Jia Chen. 2024. Partitioning message passing for graph fraud detection. In The
+Twelfth International Conference on Learning Representations.
+A
+Pseudo Code
+Algorithm 1 Fraud Detection with LLM-enhanced Graph Neural
+Networks (FLAG).
+Require: Graph G = (V, E, X), Node Text T, Pre-trained LLM,
+Frozen LM
+1: Sampling Phase:
+2: for each node 𝑣∈V do
+3:
+for each neighbor 𝑢∈N (𝑣) do
+4:
+Calculate semantic similarity 𝑠𝑖𝑚(𝑣,𝑢) using Eq. 3
+5:
+end for
+6:
+Select top-k neighbors N𝑠𝑒𝑙𝑒𝑐𝑡𝑒𝑑(𝑣) using Eq. 4
+7:
+Construct subgraph G𝑣based on selected neighbors
+8: end for
+9: Training Phase:
+10: for each node 𝑣∈V do
+11:
+Extract discriminative text 𝑡𝐷𝑣and residual text 𝑡𝑅𝑣using fine-
+tuned LLM
+12:
+Encode both discriminative and residual texts using frozen
+LM
+13:
+Feed the encoded features into shared skip-GNN
+14:
+Compute the total loss L = L𝐷𝑖𝑠𝑐. + L𝑅𝑒𝑠. + L𝑂𝑟𝑡ℎ𝑜𝑔.
+15:
+Update LLM and skip-GNN parameters alternately
+16: end for
+17: Inference Phase:
+18: Reset skip-GNN parameters
+19: for each test node 𝑣∈V do
+20:
+Extract discriminative text 𝑡𝐷𝑣
+21:
+Encode both raw text 𝑡𝑣and discriminative text 𝑡𝐷𝑣using
+pre-trained LM
+22:
+Process the encoded features through skip-GNN
+23:
+Apply attention mechanism to fuse outputs: 𝑧𝑣
+=
+Attention(𝑧𝐷𝑣,𝑧𝑣)
+24:
+Update skip-GNN using BCE loss and backpropagation
+25: end for
+26: return Node predictions 𝑧𝑣
+B
+Related Work
+B.1
+Large Language Model for Graph
+LLMs have demonstrated exceptional language understanding and
+summarization capabilities in natural language processing, show-
+casing their strong generalization abilities across unseen tasks [31,
+33]. Their emergence has sparked significant interest in the graph
+learning community, prompting research into how LLMs can en-
+hance performance on graph-related tasks [6, 20]. Most existing
+approaches that combine LLMs with GNNs can be broadly classi-
+fied into three categories: LLMs-as-Predictors, LLMs-as-Enhancers,
+and LLM-GNN Alignment. LLMs-as-Predictors leverage LLMs to
+directly predict node labels or graph properties. Methods like NL-
+Graph [41] and GPT4Graph [13] tackle graph tasks by describing
+graph structures through natural language, enabling the LLMs to
+infer patterns and make predictions. InstructGLM [47], on the other
+hand, employs instruction tuning to adapt the LLM to graph down-
+stream tasks, using natural language instructions and graph-text
+alignment to express graph structural information effectively. LLMs-
+as-Enhancers utilize LLMs to enhance node representations by gen-
+erating supplementary textual features. OFA [26] unifies graph data
+from diverse domains into a common embedding space for cross-
+domain learning. TAPE [17] generates custom prompts to query
+LLMs, producing both predictions and textual explanations for
+nodes, which are then converted into GNN node embeddings. Simi-
+larly, LLMRec [43] uses LLM-generated profiles to filter out noisy
+interactions and enrich node embeddings, thereby significantly
+improving recommendation performance. LLM-GNN Alignment
+focuses on aligning the capabilities of LLMs and GNNs to improve
+graph-based task performance. GLEM [50] iteratively utilizes the
+LLM and GNN to provide mutual labels for node classification,
+thereby aligning their respective strengths. GraphTranslator [49]
+uses a translator module to align graph models with LLMs, facilitat-
+ing seamless integration for improved performance on graph tasks.
+However, these methods generally faces a significant challenge: the
+neighbor camouflage problem, which hinders the effectiveness of
+these methods in fraud detection tasks.
+B.2
+Graph-Based Fraud Detection
+Graph-based fraud detection is essential for identifying fraudulent
+activities in financial and online networks [29, 46, 48], where in-
+creasing complexity makes it both more critical and challenging.
+The primary challenges in this domain is neighborhood camouflage.
+Fraudulent nodes often connect to numerous normal nodes, and
+when GNNs aggregate information from these heterophilous neigh-
+borhoods, the distinctiveness of fraudulent nodes becomes diluted.
+This makes it increasingly difficult to distinguish anomalous nodes
+from normal ones, thus complicating fraud detection. To address
+neighbor camouflage, existing approaches are primarily catego-
+rized into spatial and spectral methods. Spatial methods focus on
+mitigating the influence of noisy neighbors through strategies like
+re-sampling, re-weighting, or neighbor selection. CARE-GNN [8] is
+an early one to address neighbor camouflage explicitly, proposing
+similarity-aware neighbor selection. PC-GNN [27] extents this by
+balancing subgraph labels through sampling and refining neighbor-
+hood aggregation. DGA-GNN [9] introduces a feedback dynamic
+grouping strategy that classifies nodes into two distinct groups
+5159
+
