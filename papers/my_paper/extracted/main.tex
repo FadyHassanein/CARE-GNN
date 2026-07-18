@@ -20,9 +20,9 @@
 %\correspondingauthor{bob.jones@university.edu}
 
 \setabstract{%
-Graph neural networks have become a standard substrate for fraud detection on multi-relation review graphs, but sophisticated fraudsters deliberately evade neighbourhood aggregation by camouflaging both node attributes and graph connections. Existing defences address the problem only partially: early reinforcement-learning approaches such as CARE-GNN employ heuristic bandits with limited per-node adaptability and no mechanism for external signal, while recent GNN-LLM integrations augment node features but lack a learned policy for dynamic relation weighting. To our knowledge, no prior work unifies structural, adaptive, and semantic reasoning in a single framework.
-We propose a three-pillar framework that integrates these three modes of reasoning. The structural pillar is a multi-relation CARE-GNN backbone. The adaptive pillar is the Camouflage-Aware Policy Network (CAPN), an actor-critic policy that replaces CARE-GNN's heuristic bandit with per-node, per-relation filtering thresholds learned from a rich state vector. The semantic pillar is an LLM component that injects structural-reasoning scores into the policy state and fraud-specific textual risk scores into the node features through a gated residual module that preserves feature dimensionality. The three pillars are trained under a single joint objective.
-On YelpChi, every headline claim is confirmed on twenty held-out seeds never used in tuning. The full framework outperforms its structural base by $+2.70$~pp (AUC $0.7909 \pm 0.0038$ vs.\ $0.7639 \pm 0.0016$; positive on all twenty seeds, $p<10^{-16}$). The pillar-wise attribution is complete and each pillar earns its place: the semantic pillar contributes $+1.97$~pp ($20/20$, $p<10^{-12}$), the adaptive pillar $+0.58$~pp ($20/20$, $p<10^{-4}$), and---critically---the two \emph{compose}: the learned policy adds a further $+0.74$~pp on top of the semantic signal ($19/20$, $p<10^{-6}$). Reaching this attribution required correcting our own design: the LLM-derived prior initialisation, intended as semantic-to-adaptive synergy, in fact \emph{suppresses} the policy, and only after de-confounding does the adaptive pillar's contribution emerge. On a high-variance host the adaptive effect is statistically undetectable ($+0.41$~pp, $p=0.56$ at thirty seeds on GraphConsis), a detectability boundary we report transparently. Two further studies establish the framework's generality: its semantic signal transfers to eight backbones at the identical label-scarce split, significantly improving six---including the benchmark-leading XGB-Graph (AUC $0.9106\!\to\!0.9177$)---and the whole framework attaches unchanged, as a backbone-agnostic wrapper, to GraphConsis, where its semantic pathway again delivers the largest gain ($+4.16$~pp) together with a $3.5\times$ variance reduction. Finally, we show the semantic signal's value lies in its six fraud-specific score dimensions rather than in the model that computes them: a zero-cost heuristic scorer is statistically indistinguishable from the LLM on every graph backbone, making the pillar deployable without any API dependence.
+  Graph neural networks have become a standard substrate for fraud detection on multi-relation review graphs, but sophisticated fraudsters deliberately evade neighbourhood aggregation by camouflaging both node attributes and graph connections. Existing defences address the problem only partially: early reinforcement-learning approaches such as CARE-GNN employ heuristic bandits with limited per-node adaptability and no mechanism for external signal, while recent GNN-LLM integrations augment node features but lack a learned policy for dynamic relation weighting. To our knowledge, no prior work unifies structural, adaptive, and semantic reasoning in a single framework.
+  We propose a three-pillar framework that integrates these three modes of reasoning. The structural pillar is a multi-relation CARE-GNN backbone. The adaptive pillar is the Camouflage-Aware Policy Network (CAPN), an actor-critic policy that replaces CARE-GNN's heuristic bandit with per-node, per-relation filtering thresholds learned from a rich state vector. The semantic pillar is an LLM component that injects structural-reasoning scores into the policy state and fraud-specific textual risk scores into the node features through a gated residual module that preserves feature dimensionality. The three pillars are trained under a single joint objective.
+  On YelpChi, every headline claim is confirmed on twenty held-out seeds never used in tuning. The full framework outperforms its structural base by $+2.70$~pp (AUC $0.7909 \pm 0.0038$ vs.\ $0.7639 \pm 0.0016$; positive on all twenty seeds, $p<10^{-16}$). The pillar-wise attribution is complete and each pillar earns its place: the semantic pillar contributes $+1.97$~pp ($20/20$, $p<10^{-12}$), the adaptive pillar $+0.58$~pp ($20/20$, $p<10^{-4}$), and---critically---the two \emph{compose}: the learned policy adds a further $+0.74$~pp on top of the semantic signal ($19/20$, $p<10^{-6}$). Reaching this attribution required correcting our own design: the LLM-derived prior initialisation, intended as semantic-to-adaptive synergy, in fact \emph{suppresses} the policy, and only after de-confounding does the adaptive pillar's contribution emerge. On a high-variance host the adaptive effect is statistically undetectable ($+0.41$~pp, $p=0.56$ at thirty seeds on GraphConsis), a detectability boundary we report transparently. Two further studies establish the framework's generality: its semantic signal transfers to eight backbones at the identical label-scarce split, significantly improving six---including the benchmark-leading XGB-Graph (AUC $0.9106\!\to\!0.9177$)---and the whole framework attaches unchanged, as a backbone-agnostic wrapper, to GraphConsis, where its semantic pathway again delivers the largest gain ($+4.16$~pp) together with a $3.5\times$ variance reduction. Finally, we show the semantic signal's value lies in its six fraud-specific score dimensions rather than in the model that computes them: a zero-cost heuristic scorer is statistically indistinguishable from the LLM on every graph backbone, making the pillar deployable without any API dependence.
 }
 
 \keywords{Graph neural networks; Fraud detection; Reinforcement learning; Large language models; Multi-relation graphs}
@@ -200,11 +200,16 @@ pillars connect; the rest of this section takes them one at a time.
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{architecture}
-\caption{The three-pillar framework. A multi-relation CARE-GNN backbone
-(\emph{structural}) is filtered by CAPN's per-node, per-relation thresholds
-(\emph{adaptive}); a cached large language model supplies fraud-risk scores that
-enter through two channels---into the policy state, and, as a gated residual,
-into the node features (\emph{semantic}).}
+\caption{The three-pillar framework, annotated with each pathway's held-out
+contribution (Section~\ref{sec:results}). A multi-relation CARE-GNN backbone
+(\emph{structural}) is filtered by the clean, neutrally-initialised CAPN policy
+(\emph{adaptive}, $+0.58$~pp); six cached fraud-specific text scores---from an
+LLM \emph{or} a zero-cost heuristic scorer, which perform indistinguishably on
+graph backbones---enter as a gated residual into the node features
+(\emph{semantic}, $+1.97$~pp). The dashed scores-to-policy-state channel and
+the LLM-prior initialisation are part of the original design but are measured
+to contribute nothing and to suppress the policy, respectively; the reported
+framework ablates both.}
 \label{fig:arch}
 \end{figure}
 
@@ -270,14 +275,17 @@ rather than once per relation (Figure~\ref{fig:capn}).
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{architecture_capn}
-\caption{The CAPN mechanism. A per-node state $s_{v,r}$---node features,
-label-predictor confidence, structural statistics, and the LLM risk scores
-$z_v$---is mapped by a per-relation Beta policy to a single threshold
+\caption{The CAPN mechanism (clean configuration). A per-node state
+$s_{v,r}$---node features, label-predictor confidence, and structural
+statistics---is mapped by a per-relation Beta policy to a single threshold
 $\theta_{v,r}$, trained end-to-end with an actor--critic objective. That one
 threshold is then used twice: to keep the
 $\lceil\theta_{v,r}|\mathcal{N}_r(v)|\rceil$ nearest neighbours, and, through its
 per-relation mean, to set the relation's weight $\omega_r$ in the
-inter-relation aggregation.}
+inter-relation aggregation. The optional LLM scores $z_v$ in the state (dashed)
+measure $\approx 0$ contribution, and the policy is initialised neutrally: the
+LLM-prior initialisation of our original design suppresses it
+(Section~\ref{sec:ablation}).}
 \label{fig:capn}
 \end{figure}
 
@@ -416,7 +424,21 @@ $p<10^{-16}$). Critically, the pillars \emph{compose}: on top of the semantic
 signal the learned policy adds a further $+0.74$~pp ($19/20$, $p<10^{-6}$), and
 on top of the policy the semantic signal adds $+2.12$~pp ($20/20$,
 $p<10^{-15}$). Every pillar, and both stacking directions, is individually
-significant under held-out evaluation.
+significant under held-out evaluation. Figure~\ref{fig:ablation-seeds} shows
+the per-seed picture behind those averages: all twenty held-out seeds rise
+almost in lockstep as the pillars are added, which is why the paired tests are
+so decisive despite the modest absolute deltas.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{results_ablation}
+\caption{The held-out ablation, seed by seed. Each grey line is one of the
+twenty held-out seeds (100--119) evaluated under all four clean
+configurations; the bold line is the mean. Boxes give the consecutive paired
+deltas with the number of seeds improved. The near-parallel rise of every seed
+is the visual form of the paired $t$-tests in Table~\ref{tab:framework}.}
+\label{fig:ablation-seeds}
+\end{figure}
 
 \begin{table}[t]
 \centering
@@ -547,10 +569,26 @@ would expect once a high-capacity model already extracts most of what the raw
 features offer. The clearest trend is a dose--response: the weaker the backbone,
 the larger the lift (logistic regression $+2.29$, BWGNN-Homo $+1.66$) and the
 stronger the backbone, the smaller but still-significant it becomes
-(BWGNN-Hetero $+0.62$). The framework's semantic pillar is therefore not an
-architecture-bound component but a portable source of fraud signal the
-behavioural features do not already contain---evidence that the framework's
-strongest pathway generalises to any detector a practitioner already runs.
+(BWGNN-Hetero $+0.62$). Figure~\ref{fig:doseresponse} plots this relationship
+across all nine backbone configurations: the gain declines by roughly
+$1.3$~pp for every $+0.1$ of backbone AUC, yet remains positive---and usually
+significant---even at the strongest backbone we have. The framework's semantic
+pillar is therefore not an architecture-bound component but a portable source
+of fraud signal the behavioural features do not already contain---evidence
+that the framework's strongest pathway generalises to any detector a
+practitioner already runs.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{results_doseresponse}
+\caption{Dose--response of the semantic signal. Each point is one backbone at
+the identical frozen split: horizontal position is its AUC \emph{without}
+text6, vertical position the AUC gain from adding text6 (filled = significant).
+The signal helps most where the backbone is weakest and stays positive
+everywhere; GraphConsis's large but non-significant point reflects that
+backbone's high seed variance (Section~\ref{sec:wrapper}).}
+\label{fig:doseresponse}
+\end{figure}
 
 One might ask whether the gain belongs to our gated injection
 (Eq.~\eqref{eq:gate}) or simply to the signal. On BWGNN-Hetero we compared both
