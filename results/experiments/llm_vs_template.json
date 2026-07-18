@@ -1,0 +1,64 @@
+{
+  "protocol": "frozen YelpChi 25/15/60, paper protocol; haiku vs template text6 head-to-head",
+  "per_column_corr": [
+    0.5565943336031673,
+    0.08156463244404577,
+    0.283235208471201,
+    -0.16281183606421848,
+    0.08714770463026535,
+    0.49480523948479405
+  ],
+  "mean_abs_diff": 0.20222754776477814,
+  "models": {
+    "LR": {
+      "raw": 0.7693942177496262,
+      "template6": 0.7881103621438043,
+      "haiku6": 0.7922789406080551,
+      "haiku_minus_template_pp": 0.4168578464250894,
+      "significance": {
+        "method": "bootstrap 95% CI",
+        "ci": [
+          0.0011231409692786605,
+          0.0075166433172365816
+        ],
+        "sig": true
+      }
+    },
+    "MLP": {
+      "raw": 0.8204815278885041,
+      "template6": 0.8236647214437391,
+      "haiku6": 0.8283242637211069,
+      "haiku_minus_template_pp": 0.46595422773677564,
+      "significance": {
+        "method": "paired t (5 seeds)",
+        "t": 0.8257050738505238,
+        "p": 0.45537200044551013,
+        "sig": false
+      }
+    },
+    "GBM": {
+      "raw": 0.8619889214000105,
+      "template6": 0.8666224472007565,
+      "haiku6": 0.8738372265084362,
+      "haiku_minus_template_pp": 0.7214779307679664,
+      "significance": {
+        "method": "paired t (5 seeds)",
+        "t": 4.973606745769466,
+        "p": 0.007631904288896187,
+        "sig": true
+      }
+    },
+    "XGB": {
+      "raw": 0.8593811080383709,
+      "template6": 0.8661661049394211,
+      "haiku6": 0.871648588559008,
+      "haiku_minus_template_pp": 0.5482483619586809,
+      "significance": {
+        "method": "paired t (5 seeds)",
+        "t": Infinity,
+        "p": 0.0,
+        "sig": true
+      }
+    }
+  }
+}

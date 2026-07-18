@@ -194,6 +194,9 @@ def main():
     ap.add_argument('--gate-probe', action='store_true',
                     help='compare raw vs concat(text6) vs gated(text6) on BWGNN-Hetero')
     ap.add_argument('--epochs', type=int, default=100)
+    ap.add_argument('--text-file',
+                    default='llm_embeddings/yelp/text_risk_scores.pt',
+                    help='text6 tensor to inject (haiku canonical, or _template.pt)')
     args = ap.parse_args()
 
     adj_lists, feat_data, labels = load_data('yelp')
@@ -202,7 +205,7 @@ def main():
     feat = StandardScaler().fit_transform(np.asarray(feat_data))
     y = np.asarray(labels).ravel()
     n = len(y)
-    text6 = torch.load('llm_embeddings/yelp/text_risk_scores.pt', weights_only=True).numpy()
+    text6 = torch.load(args.text_file, weights_only=True).numpy()
     text6 = StandardScaler().fit_transform(text6)  # same scale as the features
 
     lap_homo = [SparseLaplacian(adjlist_to_csr(adj_lists[0], n))]
@@ -295,7 +298,9 @@ def main():
                                      'sig': bool(p < 0.05 and delta > 0)}
         print(f'{vname}: text6 delta {delta:+.2f}pp  t={t:.2f} p={p:.4f}')
 
-    with open('results/experiments/bwgnn_table.json', 'w', encoding='utf-8') as f:
+    tag = '' if 'text_risk_scores.pt' in args.text_file else '_' + \
+        args.text_file.split('_')[-1].replace('.pt', '')
+    with open(f'results/experiments/bwgnn_table{tag}.json', 'w', encoding='utf-8') as f:
         json.dump({'protocol': 'frozen YelpChi 25/15/60 split, val-AUC checkpoint, '
                                '100 epochs, h=64 C=2, Haiku text6', 'results': out},
                   f, indent=2)

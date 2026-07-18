@@ -33,6 +33,7 @@ per-node thresholds (the framework-integration hook).
 
 import argparse
 import json
+import os
 import sys
 
 import numpy as np
@@ -79,14 +80,26 @@ class ConsisSampler:
         self.feat = feat                      # raw (row-normalised) features
         self.rel_arrays = rel_arrays          # [(ids, mask)] per relation
         self.rng = rng
+        # Consistency s(u,v)=exp(-||x_u-x_v||^2) is static (depends only on raw
+        # features), so precompute the full [n, MAX_DEGREE] score per relation
+        # once instead of every batch. Identical values, ~3x faster training.
+        # chunk over nodes so the (chunk, MAX_DEGREE, d) temp stays ~67 MB rather
+        # than allocating the full (n, MAX_DEGREE, d) ~700 MB array at once.
+        n = feat.shape[0]
+        self.consis = []
+        for ids, mask in rel_arrays:
+            s = np.empty((n, ids.shape[1]), dtype=np.float32)
+            for lo in range(0, n, 4096):
+                hi = min(lo + 4096, n)
+                diff = feat[ids[lo:hi]] - feat[lo:hi, None, :]
+                s[lo:hi] = np.exp(-np.square(diff).sum(-1)) * mask[lo:hi]
+            self.consis.append(s)
 
     def sample(self, nodes, r_idx, k, eps=EPS, return_stats=False):
         nodes = np.asarray(nodes)
-        ids, mask = self.rel_arrays[r_idx]
+        ids, _ = self.rel_arrays[r_idx]
         nbr_ids = ids[nodes]                                  # (B, MAX_DEGREE)
-        nbr_mask = mask[nodes]
-        diff = self.feat[nbr_ids] - self.feat[nodes][:, None, :]
-        s = np.exp(-np.square(diff).sum(-1)) * nbr_mask       # consistency
+        s = self.consis[r_idx][nodes]                         # cached consistency
         eps_arr = np.broadcast_to(np.asarray(eps, dtype=s.dtype), (len(nodes),))
         valid = s > eps_arr[:, None]
         # Gumbel-top-k == weighted sampling without replacement, fully vectorised
@@ -271,10 +284,25 @@ def forward_batch_capn(model, sampler, feat_t, nodes, eps_per_rel):
     return model.clf(h2), mean_s
 
 
+# Baseline CAPN config = what produced GraphConsis+CAPN 0.7960±0.0207 (n.s.).
+# The rl_quest configs below override these knobs one lever at a time.
+DEFAULT_CFG = {
+    'reward': 'raw',        # w2 signal: 'raw' accuracy | 'balanced' (macro-recall)
+    'policy_lr': 3e-3,
+    'warmup': WARMUP_EP,    # 5
+    'ramp': RAMP_EP,        # 5
+    'entropy': 0.01,        # base entropy bonus weight
+    'entropy_anneal': False,
+    'lambda_policy': LAMBDA_POLICY,  # 0.15
+    'eps_scale': 1.0,       # bound on the policy action (see eps_for)
+}
+
+
 def run_capn_once(feat, text6, y, rel_arrays, sel_stats, idx_tr, idx_val, idx_te,
                   seed, use_llm=True, epochs=30, lr=0.01, batch_size=512,
-                  device='cuda'):
+                  device='cuda', cfg=None):
     """GraphConsis + framework: CAPN per-node eps policy (+ LLM gate/state)."""
+    cfg = {**DEFAULT_CFG, **(cfg or {})}
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed)
     dev = torch.device(device if torch.cuda.is_available() or device == 'cpu' else 'cpu')
@@ -296,7 +324,7 @@ def run_capn_once(feat, text6, y, rel_arrays, sel_stats, idx_tr, idx_val, idx_te
     text_t = torch.tensor(text6, dtype=torch.float32, device=dev) if use_llm else None
 
     groups = [{'params': model.parameters(), 'lr': lr},
-              {'params': policy.parameters(), 'lr': 3e-3},
+              {'params': policy.parameters(), 'lr': cfg['policy_lr']},
               {'params': value.parameters(), 'lr': 1e-3}]
     if gate is not None:
         groups.append({'params': gate.parameters(), 'lr': lr})
@@ -316,7 +344,11 @@ def run_capn_once(feat, text6, y, rel_arrays, sel_stats, idx_tr, idx_val, idx_te
         for r in range(R):
             e, lp = policy(S[r], r, deterministic=not train_flag)
             policy.store_action(lp, e)
-            eps_list.append(e.detach().cpu().numpy())
+            # eps_scale bounds the action: the Beta output (0,1) is a very
+            # aggressive consistency threshold vs the default eps=1e-3, so
+            # scaling it down lets the policy make gentler filtering moves and
+            # avoids over-filtering already-good neighbourhoods.
+            eps_list.append(e.detach().cpu().numpy() * cfg['eps_scale'])
             logp.append(lp)
         return S, eps_list
 
@@ -332,10 +364,13 @@ def run_capn_once(feat, text6, y, rel_arrays, sel_stats, idx_tr, idx_val, idx_te
             ps.append(torch.softmax(logits, 1)[:, 1].cpu().numpy())
         return np.concatenate(ps)
 
+    warmup, ramp = cfg['warmup'], cfg['ramp']
     best = None
     for ep in range(epochs):
         model.train(); policy.train()
-        lam = 0.0 if ep < WARMUP_EP else LAMBDA_POLICY * min(1.0, (ep - WARMUP_EP + 1) / RAMP_EP)
+        lam = (0.0 if ep < warmup
+               else cfg['lambda_policy'] * min(1.0, (ep - warmup + 1) / ramp))
+        ent = cfg['entropy'] * (1.0 - ep / epochs) if cfg['entropy_anneal'] else cfg['entropy']
         reward_computer.reset_epoch()
         order = rng.permutation(idx_tr)
         for i in range(0, len(order), batch_size):
@@ -347,12 +382,22 @@ def run_capn_once(feat, text6, y, rel_arrays, sel_stats, idx_tr, idx_val, idx_te
             yb = yt[torch.as_tensor(batch, device=dev)]
             ce = F.cross_entropy(logits, yb)
             avg_dist = 1.0 - float(np.mean(mean_s))            # inconsistency
-            batch_acc = float((logits.argmax(1) == yb).float().mean())
+            # reward's accuracy term: raw accuracy is majority-dominated at 14.5%
+            # positives, so 'balanced' (mean per-class recall) is the real signal.
+            with torch.no_grad():
+                preds = logits.argmax(1)
+                if cfg['reward'] == 'balanced':
+                    pos, neg = yb == 1, yb == 0
+                    rp = (preds[pos] == 1).float().mean() if pos.any() else preds.new_tensor(0.5)
+                    rn = (preds[neg] == 0).float().mean() if neg.any() else preds.new_tensor(0.5)
+                    acc_signal = float(0.5 * (rp + rn))
+                else:
+                    acc_signal = float((preds == yb).float().mean())
             raw_r, _ = reward_computer.compute_reward(
-                avg_dist, batch_acc, policy._thresholds, return_raw=True)
+                avg_dist, acc_signal, policy._thresholds, return_raw=True)
             V = torch.stack([value(S[r]).squeeze(-1) for r in range(R)], 1)  # [B,R]
             adv = (raw_r - V).detach()
-            p_loss = policy.get_policy_loss(adv)
+            p_loss = policy.get_policy_loss(adv, lambda_entropy=ent)
             c_loss = ((V - raw_r) ** 2).mean()
             (ce + lam * p_loss + LAMBDA_CRITIC * c_loss).backward()
             opt.step()
@@ -365,10 +410,123 @@ def run_capn_once(feat, text6, y, rel_arrays, sel_stats, idx_tr, idx_val, idx_te
     return best
 
 
+# The RL-significance quest: each config changes the baseline one lever at a time
+# so the doc log attributes any gain to a specific change. RL pillar = CAPN vs
+# standalone (both use_llm=False), paired t-test on matched seeds.
+RL_QUEST_CONFIGS = {
+    'baseline':     {},  # DEFAULT_CFG -> reproduces 0.7960 n.s.
+    'v1_reward':    {'reward': 'balanced'},
+    'v2_stab':      {'reward': 'balanced', 'policy_lr': 1e-3, 'warmup': 10,
+                     'ramp': 10, 'entropy': 0.02, 'entropy_anneal': True},
+    'v3_stab_soft': {'reward': 'balanced', 'policy_lr': 5e-4, 'warmup': 10,
+                     'ramp': 10, 'entropy': 0.03, 'entropy_anneal': True,
+                     'lambda_policy': 0.10},
+    # iter2: build on v1_reward (winner), target the over-filtering of good seeds
+    'v4_bounded':   {'reward': 'balanced', 'eps_scale': 0.15},
+    'v5_strong':    {'reward': 'balanced', 'lambda_policy': 0.30},
+    'v6_bounded_strong': {'reward': 'balanced', 'eps_scale': 0.15,
+                          'lambda_policy': 0.30},
+}
+
+
+def rl_quest(name, seeds, feat, text6, y, rel_arrays, sel_stats, splits,
+             epochs, device):
+    """Run one CAPN config (RL pillar, no LLM) and test vs the standalone
+    GraphConsis at the same seeds. Standalone for seeds 72-76 is reused from
+    graphconsis_table.json; other seeds are computed fresh."""
+    from scipy import stats as _stats
+    idx_tr, idx_val, idx_te = splits
+    cfg = {**DEFAULT_CFG, **RL_QUEST_CONFIGS[name], 'epochs': epochs}
+
+    # standalone (no CAPN, no LLM) is config-independent, so cache it persistently
+    # and write each result as it lands -> a kill never loses standalone compute.
+    cache_path = 'results/experiments/rl_quest/_standalone_cache.json'
+    cached = {}
+    try:
+        with open('results/experiments/graphconsis_table.json', encoding='utf-8') as f:
+            gt = json.load(f)['results']['raw32']
+        cached = {s: a for s, a in zip([72, 73, 74, 75, 76], gt['per_seed_auc'])}
+    except (FileNotFoundError, KeyError):
+        pass
+    if os.path.exists(cache_path):
+        with open(cache_path, encoding='utf-8') as f:
+            cached.update({int(k): v for k, v in json.load(f).items()})
+    standalone = []
+    for s in seeds:
+        if s in cached:
+            standalone.append(cached[s])
+        else:
+            a = run_once(feat, y, rel_arrays, idx_tr, idx_val, idx_te,
+                         s, epochs=epochs, device=device)[1]
+            standalone.append(a)
+            cached[s] = a
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                json.dump({str(k): v for k, v in cached.items()}, f, indent=2)
+        print(f'  [{name}] standalone seed {s}: {standalone[-1]:.4f}', flush=True)
+
+    # CAPN results are config-specific, so cache per (config, seed) and write
+    # each as it lands -> a stall/kill mid-CAPN-phase resumes seed-by-seed.
+    capn_cache_path = f'results/experiments/rl_quest/_capn_{name}_cache.json'
+    capn_cache = {}
+    if os.path.exists(capn_cache_path):
+        with open(capn_cache_path, encoding='utf-8') as f:
+            capn_cache = {int(k): v for k, v in json.load(f).items()}
+    capn = []
+    for s in seeds:
+        if s in capn_cache:
+            a = capn_cache[s]
+        else:
+            a = run_capn_once(feat, text6, y, rel_arrays, sel_stats, idx_tr, idx_val,
+                              idx_te, s, use_llm=False, epochs=epochs, device=device,
+                              cfg=cfg)[1]
+            capn_cache[s] = a
+            with open(capn_cache_path, 'w', encoding='utf-8') as f:
+                json.dump({str(k): v for k, v in capn_cache.items()}, f, indent=2)
+        capn.append(a)
+        print(f'  [{name}] +CAPN seed {s}: {a:.4f}', flush=True)
+
+    capn, standalone = np.array(capn), np.array(standalone)
+    t, p = _stats.ttest_rel(capn, standalone)
+    delta = float((capn - standalone).mean() * 100)
+    out = {
+        'config_name': name, 'cfg': cfg, 'seeds': list(seeds),
+        'standalone_auc': [float(a) for a in standalone],
+        'capn_auc': [float(a) for a in capn],
+        'standalone_mean': float(standalone.mean()),
+        'standalone_std': float(standalone.std(ddof=1)),
+        'capn_mean': float(capn.mean()), 'capn_std': float(capn.std(ddof=1)),
+        'rl_delta_pp': delta, 't': float(t), 'p': float(p),
+        'sig': bool(p < 0.05 and delta > 0),
+    }
+    path = f'results/experiments/rl_quest/{name}_n{len(seeds)}.json'
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(out, f, indent=2)
+    print(f'[{name}] CAPN {out["capn_mean"]:.4f}±{out["capn_std"]:.4f} vs '
+          f'standalone {out["standalone_mean"]:.4f}±{out["standalone_std"]:.4f}  '
+          f'RL delta {delta:+.2f}pp  t={t:.2f} p={p:.4f}  '
+          f'{"*** SIG ***" if out["sig"] else "n.s."}  -> {path}', flush=True)
+    return out
+
+
+def _prevent_sleep():
+    """Keep Windows from idle-throttling/sleeping during long CPU runs. Scoped to
+    the process — reverts automatically on exit. (Overnight throttling once
+    stretched one standalone seed from ~8 min to ~8 h.)"""
+    if sys.platform == 'win32':
+        import ctypes
+        ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+
+
 def main():
+    _prevent_sleep()
     ap = argparse.ArgumentParser()
     ap.add_argument('--validate', action='store_true',
                     help='PC-GNN protocol 40/20/40; published band AUC [0.62, 0.73]')
+    ap.add_argument('--rl-quest', metavar='CONFIG',
+                    help=f'run one RL-quest config: {list(RL_QUEST_CONFIGS)}')
+    ap.add_argument('--seeds', type=int, nargs='+', default=SEEDS,
+                    help='seed list (use fresh seeds for held-out confirmation)')
     ap.add_argument('--smoke', action='store_true', help='1 seed, 2 epochs, CPU')
     ap.add_argument('--capn', action='store_true',
                     help='framework-integrated rows: +CAPN and +CAPN+LLM, frozen split')
@@ -376,6 +534,9 @@ def main():
                     help='2-epoch CPU smoke of the CAPN-integrated variant')
     ap.add_argument('--epochs', type=int, default=30)
     ap.add_argument('--device', default='cuda')
+    ap.add_argument('--text-file',
+                    default='llm_embeddings/yelp/text_risk_scores.pt',
+                    help='text6 tensor (haiku canonical, or _template.pt)')
     args = ap.parse_args()
 
     adj_lists, feat_data, labels = load_data('yelp')
@@ -386,7 +547,7 @@ def main():
     n = len(y)
     # relations only (skip homo at index 0)
     rel_arrays = [build_neigh_arrays(a, n) for a in adj_lists[1:4]]
-    text6 = torch.load('llm_embeddings/yelp/text_risk_scores.pt', weights_only=True).numpy()
+    text6 = torch.load(args.text_file, weights_only=True).numpy()
 
     if args.smoke:
         idx_tr, idx_val, idx_te, _, _, _ = frozen_split(n, y)
@@ -398,10 +559,19 @@ def main():
     if args.capn_smoke:
         idx_tr, idx_val, idx_te, _, _, _ = frozen_split(n, y)
         sel_stats = precompute_selection_stats(feat, rel_arrays)
-        b = run_capn_once(feat, text6, y, rel_arrays, sel_stats,
-                          idx_tr[:2000], idx_val[:2000], idx_te[:4000],
-                          72, use_llm=True, epochs=2, device='cpu')
-        print(f'capn smoke: val={b[0]:.4f} test AUC={b[1]:.4f} AP={b[2]:.4f}')
+        for name in ('baseline', 'v2_stab'):
+            cfg = {**DEFAULT_CFG, **RL_QUEST_CONFIGS[name]}
+            b = run_capn_once(feat, text6, y, rel_arrays, sel_stats,
+                              idx_tr[:2000], idx_val[:2000], idx_te[:4000],
+                              72, use_llm=False, epochs=2, device='cpu', cfg=cfg)
+            print(f'capn smoke [{name}]: val={b[0]:.4f} AUC={b[1]:.4f} AP={b[2]:.4f}')
+        return
+
+    if args.rl_quest:
+        idx = frozen_split(n, y)
+        sel_stats = precompute_selection_stats(feat, rel_arrays)
+        rl_quest(args.rl_quest, args.seeds, feat, text6, y, rel_arrays, sel_stats,
+                 (idx[0], idx[1], idx[2]), args.epochs, args.device)
         return
 
     if args.capn:
@@ -487,10 +657,12 @@ def main():
     out['text6_delta'] = {'delta_pp': float(delta), 't': float(t), 'p': float(p),
                           'sig': bool(p < 0.05 and delta > 0)}
     print(f'text6 delta {delta:+.2f}pp  t={t:.2f} p={p:.4f}')
-    with open('results/experiments/graphconsis_table.json', 'w', encoding='utf-8') as f:
+    gtag = '' if 'text_risk_scores.pt' in args.text_file else '_' + \
+        args.text_file.split('_')[-1].replace('.pt', '')
+    with open(f'results/experiments/graphconsis_table{gtag}.json', 'w', encoding='utf-8') as f:
         json.dump({'protocol': 'frozen YelpChi 25/15/60, val-AUC ckpt, fan-out [10,5], '
-                               'eps=1e-3, Haiku text6', 'results': out}, f, indent=2)
-    print('-> results/experiments/graphconsis_table.json')
+                               'eps=1e-3, text6=' + args.text_file, 'results': out}, f, indent=2)
+    print(f'-> results/experiments/graphconsis_table{gtag}.json')
 
 
 if __name__ == '__main__':
