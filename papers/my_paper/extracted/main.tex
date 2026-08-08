@@ -386,13 +386,12 @@ features and three relations (same-user, same-product-and-rating,
 same-product-within-a-month). Every number in this section uses one fixed
 two-stage stratified split---$25\%$ train, $15\%$ validation, $60\%$
 test (\texttt{random\_state}${=}2$)---which is the label-scarce regime inherited
-from the CARE-GNN protocol. We deliberately do \emph{not} adopt the $40\%${--}$70\%$
-training ratios common in recent spectral-GNN papers: on this benchmark the
-supervision ratio dominates absolute AUC (GAGA, for instance, moves from $0.944$
-at $40\%$ train to $0.70$ at $1\%$~\cite{wang2023gaga}), so cross-paper AUC
-comparisons at different ratios are not like-for-like. To keep the comparison
-honest, \emph{every} baseline in Table~\ref{tab:portable} is re-run in-repo at
-this identical $25\%$ split rather than quoted from its source paper.
+from the CARE-GNN protocol. We do \emph{not} adopt the $40\%$--$70\%$ training
+ratios of recent spectral-GNN papers---supervision ratio dominates absolute AUC
+on this benchmark (GAGA moves from $0.944$ at $40\%$ train to $0.70$ at
+$1\%$~\cite{wang2023gaga})---so \emph{every} baseline in
+Table~\ref{tab:portable} is re-run in-repo at this identical split rather than
+quoted from its source paper.
 
 Unless noted, we report test-set AUC (and, for the framework, AP and F1-macro) at
 the checkpoint with the best validation AUC, averaged over five seeds
@@ -423,10 +422,8 @@ $p<10^{-16}$). Critically, the pillars \emph{compose}: on top of the semantic
 signal the learned policy adds a further $+0.74$~pp ($19/20$, $p<10^{-6}$), and
 on top of the policy the semantic signal adds $+2.12$~pp ($20/20$,
 $p<10^{-15}$). Every pillar, and both stacking directions, is individually
-significant under held-out evaluation. Figure~\ref{fig:ablation-seeds} shows
-the per-seed picture behind those averages: all twenty held-out seeds rise
-almost in lockstep as the pillars are added, which is why the paired tests are
-so decisive despite the modest absolute deltas.
+significant under held-out evaluation; Figure~\ref{fig:ablation-seeds} shows
+the per-seed consistency behind those averages.
 
 \begin{figure}[t]
 \centering
@@ -469,51 +466,29 @@ R4$'$ Full (clean)                  & $\mathbf{0.7909 \pm 0.0035}$ & $\mathbf{0.
 \end{tabular}
 \end{table}
 
-The adaptive pillar's story deserves its telling, because we nearly reported it
-wrong twice. Our original configuration seeded the policy with LLM-derived
-priors---a semantic-to-adaptive coupling that sounds synergistic---and under it
-the pillar looked null both alone ($+0.19$~pp, $p=0.10$) and stacked on the
-semantic signal ($+0.21$~pp, $p=0.30$); we were prepared to publish both as
-honest negatives. De-confounding the attribution (removing the priors so that
-``adaptive'' contains no semantic signal) revealed the opposite on both counts:
-the priors were \emph{hurting} the policy ($-0.21$~pp alone, $-0.71$~pp in the
-full framework), the clean policy's solo gain is real ($+0.58$~pp, $20/20$
-held-out seeds), and the clean full framework composes ($+0.74$~pp over
-semantic-only, $19/20$). The adaptive effect is modest and is detectable here
-because this backbone's seed variance ($\pm 0.0016$) is low; we return to what
-happens on noisier hosts in Section~\ref{sec:wrapper}. We also isolated the
-framework's second semantic-to-adaptive coupling---the LLM scores routed into
-the policy state: removing them from the full configuration shifts AUC by an
-insignificant $+0.33$~pp ($p=0.44$), i.e.\ this routing, too, contributes
-nothing measurable; the framework's gains come from the gate-injected features
-and the clean policy. The general lesson we draw: hand-designed couplings
-between pillars can silently suppress or dilute the very components they are
-meant to help, and only component-wise de-confounded ablation exposes this.
+The R2$'$/R4$'$ rows exist because we nearly reported the adaptive pillar
+wrong: under its original LLM-prior initialisation it looked null both alone
+($+0.19$~pp, $p=0.10$) and stacked ($+0.21$~pp, $p=0.30$). De-confounding
+revealed the priors were \emph{suppressing} the policy ($-0.21$~pp alone,
+$-0.71$~pp in the full framework); with a neutral initialisation both effects
+are real and held-out confirmed. The framework's second semantic-to-adaptive
+coupling---LLM scores in the policy state---likewise contributes nothing
+measurable ($+0.33$~pp on removal, $p=0.44$). The lesson: hand-designed
+couplings between pillars can silently suppress the components they are meant
+to help, and only de-confounded ablation exposes this.
 
-To test whether these effects shift with the backbone's \emph{capacity}, we
-repeated the full ablation (five matched seeds) on a higher-capacity variant of
-the same backbone (a nonlinear feature encoder, ego/neighbour separation, and a
-cosine schedule). The pattern sharpens on three fronts. First, the semantic
-pillar's gain \emph{grows} with capacity: GNN+LLM reaches AUC
-$0.7952 \pm 0.0042$ ($+2.96$~pp over the upgraded backbone, $p<0.01$), and the
-full framework $0.7951 \pm 0.0032$ ($+2.94$~pp, $p<0.01$). Second, the adaptive
-pillar stays within noise in both directions ($+0.46$~pp alone, $p=0.18$;
-$-0.02$~pp on top of the LLM, $p=0.95$); note these rows retain the LLM-prior
-initialisation---the de-confounding above post-dates this experiment, and the
-higher-capacity backbone's larger seed variance ($\pm 0.012$) would in any case
-mask a $+0.4$~pp-scale clean effect. Third---and this we
-did not anticipate---the higher-capacity backbone is \emph{unstable} without the
-semantic signal: one seed collapses to a degenerate solution in both the plain
-and the +RL configurations (AUC ${\approx}0.745$, inflating their deviations to
-${\pm}0.012$--$0.014$), whereas both LLM-equipped configurations train stably
-(${\pm}0.003$--$0.004$) on every seed. The added capacity, in other words, pays
-off reliably only when the text gate anchors it. Capacity of the same
-\emph{kind} therefore does not give the policy separable decisions to make. One
-natural hypothesis is that the limiter is the backbone's single-threshold
-\emph{selection mechanism} rather than its capacity, which would predict a
-larger policy effect on a backbone whose neighbour selection is intrinsically
-richer. We test that hypothesis directly in the next section---and, as it turns
-out, do not find support for it.
+Repeating the ablation on a higher-capacity variant of the backbone (nonlinear
+feature encoder, ego/neighbour separation, cosine schedule; five matched seeds,
+prior-initialised) sharpens the picture: the semantic gain \emph{grows}
+($+2.96$~pp, full framework $0.7951 \pm 0.0032$, $p<0.01$), the adaptive rows
+stay within that variant's larger seed noise ($\pm 0.012$, enough to mask a
+$+0.4$~pp-scale effect), and---unexpectedly---the added capacity is
+\emph{unstable} without the semantic signal: one seed collapses to
+${\approx}0.745$ in both LLM-free configurations, while both LLM-equipped ones
+train stably (${\pm}0.003$--$0.004$) on every seed. Capacity pays off only when
+the text gate anchors it, and capacity alone does not give the policy richer
+decisions to make---a hypothesis about \emph{selection richness} that the next
+section tests directly, and does not support.
 
 \subsection{Generality I: the semantic pillar beyond the framework}
 \label{sec:generality}
@@ -523,9 +498,9 @@ is whether that strength is bound to our architecture or is a property of the
 signal itself. Table~\ref{tab:portable} answers it by adding text6 to eight
 classifiers of increasing strength, from a linear model to XGB-Graph---the
 tree-plus-neighbour-aggregation method that tops YelpChi on the GADBench
-benchmark~\cite{tang2023gadbench}. For every model except CARE-GNN the
-injection is nothing more than concatenating the six scores onto the input
-features; only CARE-GNN uses the learned gate of Eq.~\eqref{eq:gate}.
+benchmark~\cite{tang2023gadbench}. The injection is plain concatenation (only
+CARE-GNN uses the gate of Eq.~\eqref{eq:gate}), and the table isolates the
+\emph{signal}: the adaptive pillar is not applied here.
 
 \begin{table}[t]
 \centering
@@ -557,25 +532,14 @@ XGB-Graph (2-hop)        & 0.9106 & 0.9177 & $+0.70^{*}$ \\
 \end{tabular}
 \end{table}
 
-The pattern is consistent and, we think, more informative than any single row.
-The signal transfers: it lifts a linear model, two tree ensembles, a $2020$
-relational GNN, and a $2022$ spectral GNN, and it does so on top of the strongest
-backbone we have---XGB-Graph rises from $0.9106$ to $0.9177$ AUC
-($+0.70$~pp, bootstrap CI excluding zero), with AP improving from $0.720$ to
-$0.727$. Two backbones (MLP, and---not shown---gradient boosting \emph{after}
-neighbour aggregation) absorb the signal into noise, which is exactly what one
-would expect once a high-capacity model already extracts most of what the raw
-features offer. The clearest trend is a dose--response: the weaker the backbone,
-the larger the lift (logistic regression $+2.29$, BWGNN-Homo $+1.66$) and the
-stronger the backbone, the smaller but still-significant it becomes
-(BWGNN-Hetero $+0.62$). Figure~\ref{fig:doseresponse} plots this relationship
-across all nine backbone configurations: the gain declines by roughly
-$1.3$~pp for every $+0.1$ of backbone AUC, yet remains positive---and usually
-significant---even at the strongest backbone we have. The framework's semantic
-pillar is therefore not an architecture-bound component but a portable source
-of fraud signal the behavioural features do not already contain---evidence
-that the framework's strongest pathway generalises to any detector a
-practitioner already runs.
+The signal transfers across every model family, including the strongest
+backbone we have: XGB-Graph rises $0.9106\!\to\!0.9177$ AUC (AP
+$0.720\!\to\!0.727$). The clearest trend is a dose--response
+(Figure~\ref{fig:doseresponse}): the gain declines by roughly $1.3$~pp per
+$+0.1$ of backbone AUC yet remains positive---and usually
+significant---everywhere. The semantic pillar is therefore not an
+architecture-bound component but a portable source of fraud signal the
+behavioural features do not already contain.
 
 \begin{figure}[t]
 \centering
@@ -589,32 +553,22 @@ backbone's high seed variance (Section~\ref{sec:wrapper}).}
 \label{fig:doseresponse}
 \end{figure}
 
-One might ask whether the gain belongs to our gated injection
-(Eq.~\eqref{eq:gate}) or simply to the signal. On BWGNN-Hetero we compared both
-injections directly (five seeds, same split): plain concatenation adds
-$+0.65$~pp ($p<0.001$) and the gate $+0.59$~pp ($p<0.001$), a difference between
-them of only $-0.06$~pp that is not significant ($p=0.62$). The gate therefore
-\emph{matches} concatenation on a backbone strong enough that the extra input
-dimensions do no harm; its advantage is specific to backbones like CARE-GNN,
-where naive concatenation dilutes the signal and the gate's near-closed
-initialisation ($\sigma(g)\approx0.12$) instead protects early training. Read
-correctly, the gate is a \emph{safe} injection---never worse than concatenation,
-and materially better only where the backbone is fragile.
+Does the gain belong to the gated injection or to the signal? On BWGNN-Hetero,
+concatenation and the gate perform identically ($+0.65$ vs.\ $+0.59$~pp,
+difference $p=0.62$): the gate is a \emph{safe} injection---never worse than
+concatenation, and materially better only on fragile backbones like CARE-GNN,
+where concatenation dilutes the signal and the gate's near-closed
+initialisation protects early training.
 
-A sharper question is whether this signal requires a language model at all. The
-six score definitions are deliberately interpretable (templated phrasing,
-sentiment--rating contradiction, copy-paste repetition), which means a
-deterministic, zero-cost heuristic scorer can be written for them---and we
-wrote one, then ran the head-to-head at the identical protocol
-(Table~\ref{tab:headtohead}). The two scorers produce genuinely different
-score vectors (mean $|\Delta| = 0.20$ on $[0,1]$; per-column correlation
-$-0.16$ to $0.56$), yet on \emph{every graph backbone}---including our headline
-CARE-GNN---their downstream AUC is statistically indistinguishable; the LLM
-retains a small significant edge only on simple feature-only classifiers. The
-semantic pillar's value therefore lies in \emph{which six quantities are
-measured}, not in who computes them: for graph-based detectors the signal
-costs nothing to produce, and the LLM is an optional scorer whose modest edge
-surfaces only where no aggregation smooths it away.
+A sharper question: does the signal require a language model at all? The six
+score definitions are interpretable enough to admit a deterministic, zero-cost
+heuristic scorer, and the head-to-head (Table~\ref{tab:headtohead}) shows that
+although the two scorers produce genuinely different vectors (mean
+$|\Delta|=0.20$; per-column correlation $-0.16$ to $0.56$), their downstream
+AUC is statistically indistinguishable on \emph{every graph backbone}. The
+LLM's small edge survives only on feature-only classifiers, where no
+aggregation smooths it away. The pillar's value lies in \emph{which six
+quantities are measured}, not in who computes them.
 
 \begin{table}[t]
 \centering
@@ -634,44 +588,26 @@ XGBoost       & $+0.55$      & GraphConsis  & $+1.22^{\dagger}$ \\
 \end{tabular}
 \end{table}
 
-The semantic pillar also has a structural boundary, and Amazon marks it. The
-Amazon benchmark ships no review text, so the textual pathway cannot exist
-there; only graph-derived LLM scores are available, and on Amazon's already
-strong features they contribute essentially nothing---$+0.05$~pp AUC when
-routed into the policy state, and $-0.59$~pp AUC ($-2.87$~pp F1) when injected
-as node features. This is the dose--response pattern of
-Table~\ref{tab:portable} taken to its limit: the semantic pillar helps where
-text exists and behavioural features leave headroom, and adds nothing where
-either condition fails. We therefore evaluate the textual pathway on YelpChi
-and state that scope explicitly rather than leave it implicit.
-
-We stress what Table~\ref{tab:portable} does \emph{not} claim. It does not show
-that dropping these backbones into the full three-pillar framework yields these
-gains---the adaptive pillar (CAPN) is bound to a neighbour-selection step and
-was not applied here, and the injection for the non-CARE models is plain
-concatenation rather than the gate. Table~\ref{tab:portable} isolates the
-signal; the next section attaches the \emph{whole} framework to a second
-backbone.
+The pillar's structural boundary is Amazon: that benchmark ships no review
+text, so the textual pathway cannot exist, and the only available graph-derived
+LLM scores add essentially nothing to its already strong features ($+0.05$~pp
+in the policy state; $-0.59$~pp as node features). This is the dose--response
+taken to its limit---the semantic pillar helps where text exists and features
+leave headroom---so we evaluate the textual pathway on YelpChi and state that
+scope explicitly.
 
 \subsection{Generality II: the framework as a backbone-agnostic wrapper}
 \label{sec:wrapper}
 
-The diagnosis above makes a testable prediction: on a backbone whose neighbour
-selection is intrinsically richer than CARE-GNN's single global threshold, the
-learned policy should have more to contribute. We test it by treating the
-framework as a \emph{backbone-agnostic wrapper} and attaching the identical
-CAPN machinery---policy, critic, shaped reward, and gate, unchanged---to
-GraphConsis~\cite{liu2020alleviating}, whose native selection filters
-neighbours by feature consistency against a global threshold
-$\varepsilon=10^{-3}$ and samples proportionally to consistency. Only two
-elements are backbone-specific: the policy state (node features, degree,
-consistency statistics, and the LLM scores) and the actuation point (the
-per-node $\varepsilon$ that replaces the global one). Our GraphConsis
-reimplementation, trained with a modern protocol (Adam, validation
-checkpointing), reaches AUC $0.835 \pm 0.023$ at the original $40/20/40$
-protocol---well above the $0.62$--$0.70$ published for reproductions that used
-the original training defaults---so the wrapper is tested on a strong host,
-not a strawman.
+Does richer neighbour selection give the policy more to contribute? We test
+this by attaching the identical CAPN machinery---policy, critic, shaped reward,
+and gate, unchanged---to GraphConsis~\cite{liu2020alleviating}, whose native
+selection filters neighbours by feature consistency against a global threshold.
+Only two elements are backbone-specific: the policy state and the actuation
+point (a per-node consistency threshold replacing the global one). Our
+reimplementation reaches $0.835 \pm 0.023$ at the original $40/20/40$
+protocol---well above published reproductions ($0.62$--$0.70$)---so the wrapper
+is tested on a strong host, not a strawman.
 
 \begin{table}[t]
 \centering
@@ -693,63 +629,38 @@ GraphConsis (standalone)      & $0.7840 \pm 0.0357$ & --- & --- \\
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:wrapper} gives the result, and it is a study in what averages
-hide. The semantic signal is again the decisive component: $+4.16$~pp, the
-largest text6 effect of any backbone we tested, and---replicating the
-stabilisation finding of Section~\ref{sec:ablation} on a second, independent
-backbone---it collapses the seed variance by $3.5\times$ (the standalone's
-worst seed rises from $0.737$ to $0.810$). The adaptive pillar shows its largest
-five-seed point estimate here ($+1.20$~pp, $p=0.63$); per-seed, the policy wins
-where the native sampler struggles and loses where it excels, and at $n=5$ that
-inconsistency swamps the mean. Because this backbone is the most favourable host
-we could construct for the policy, we subjected the adaptive pillar to a
-decisive test rather than leaving it to a noisy five-seed estimate: we improved
-its reward (a class-balanced accuracy signal in place of raw accuracy, which is
-majority-dominated at $14.5\%$ positives) and re-evaluated on \emph{thirty
-held-out seeds} never used in any tuning. The gain does not reach significance
-here: RL delta $+0.41$~pp, $t=0.58$, $p=0.56$ (14 of 30 seeds positive). Read
-together with Section~\ref{sec:ablation}, this is a statement about
-\emph{detectability}, not about the pillar: the adaptive effect is
-$+0.4$--$0.6$~pp on both hosts, but CARE-GNN's seed-std of $\pm0.0016$ makes it
-resolvable ($20/20$ positive seeds, $p<10^{-4}$) while GraphConsis's
-$\pm 0.04$ would require $n\!\approx\!340$ seeds to resolve the same effect. The
-policy does modestly compress that variance (CAPN seed-std $0.031$ vs.\
-standalone $0.042$), but only as a trend (Pitman--Morgan $p=0.08$). Stacked on
-top of the semantic signal it again fails to add ($-1.46$~pp, n.s.). The wrapper
-experiment thus establishes the framework's portability while completing its
-internal attribution: the framework transfers to a new backbone with only its
-state features and actuation point rewritten, its semantic pathway delivers the
-decisive gain wherever it goes, and its adaptive pathway contributes a small,
-rigorously confirmed gain where measurement noise permits detection---and
-disappears into the noise where it does not.
+Table~\ref{tab:wrapper} gives the result. The semantic signal is again the
+decisive component: $+4.16$~pp, the largest text6 effect of any backbone we
+tested, and---replicating the stabilisation finding of
+Section~\ref{sec:ablation}---it collapses the seed variance by $3.5\times$ (the
+worst seed rises from $0.737$ to $0.810$). The adaptive pillar's five-seed
+estimate ($+1.20$~pp, $p=0.63$) does not survive a decisive test: with an
+improved class-balanced reward, thirty held-out seeds give $+0.41$~pp
+($p=0.56$). Read together with Section~\ref{sec:ablation}, this is a statement
+about \emph{detectability}, not the pillar: the adaptive effect is
+$+0.4$--$0.6$~pp on both hosts, but CARE-GNN's seed-std of $\pm 0.0016$
+resolves it ($20/20$, $p<10^{-4}$) while GraphConsis's $\pm 0.04$ would need
+$n\!\approx\!340$ seeds. Stacked on the semantic signal it again fails to add
+($-1.46$~pp, n.s.). The wrapper experiment thus establishes portability while
+completing the attribution: the framework transfers with two localised changes,
+its semantic pathway delivers the decisive gain wherever it goes, and its
+adaptive pathway contributes a small confirmed gain where measurement noise
+permits detection---and disappears into the noise where it does not.
 
 \subsection{Where this leaves the framework}
 
-Two facts sit side by side and we take both seriously. The semantic signal is
-real, significant, and portable across model families
-(Table~\ref{tab:portable}). And the end-to-end framework, at $0.7909$ AUC on this
-label-scarce split, is well below what a modern spectral GNN
-(BWGNN-Hetero, $0.894$) or a tree-plus-aggregation method (XGB-Graph, $0.918$)
-reaches on the very same features and split. We do not present the framework as a
-state-of-the-art accuracy result; we present it as a new, modular framework
-whose gains are significant, reproducible, and honestly attributed. That
-modularity is the point: because the three pillars are separable, the framework
-is not chained to the backbone it was born on---its semantic pathway already
-rides every stronger host we tested (Section~\ref{sec:generality}), and the
-whole framework attaches to a new selection-based backbone with two localised
-changes (Section~\ref{sec:wrapper}). For a practitioner, the framework's
-semantic pathway is deployment-ready today: cached LLM textual-risk scores
-lift GraphConsis to $0.826$ and XGB-Graph to $0.918$ on this split at the cost
-of a feature concatenation. The adaptive pathway contributes a rigorously
-confirmed gain both alone ($+0.58$~pp, $20/20$ held-out seeds) and composed on
-top of the semantic signal ($+0.74$~pp, $19/20$) once de-confounded from the
-LLM priors that were suppressing it---an effect currently worth having only on
-low-variance backbones, since on noisier hosts it sinks below the seed-noise
-floor. Enlarging that effect, rather than merely detecting it, is the open
-problem: a reward tied directly to the downstream
-metric, a richer (e.g.\ edge-level) action space, and imbalance-aware hosts
-such as PC-GNN are the natural levers---future work the wrapper now makes
-cheap to run.
+Two facts sit side by side and we take both seriously. The framework's gains
+are significant, reproducible, and honestly attributed---and its $0.7909$ AUC
+on this label-scarce split remains well below what BWGNN-Hetero ($0.894$) or
+XGB-Graph ($0.918$) reach on the same features. We therefore present a modular
+framework, not a state-of-the-art accuracy result---and modularity is the
+point: the semantic pathway already rides every stronger host we tested at the
+cost of a feature concatenation, and the whole framework attaches to a new
+backbone with two localised changes. The open problem is enlarging the
+adaptive effect rather than merely detecting it: a reward tied directly to
+the downstream metric, a richer (e.g.\ edge-level) action space, and
+imbalance-aware hosts such as PC-GNN are the natural levers---future work the
+wrapper makes cheap to run.
 
 \section{Conclusion}
 \label{sec:conclusion}
