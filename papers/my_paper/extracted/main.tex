@@ -1,11 +1,20 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-%Template for the Proceedings of the International Conference on Emerging Trends in Electrical and Mechanical Engineering 
+%Template for the Proceedings of the International Conference on Emerging Trends in Electrical and Mechanical Engineering
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \documentclass{conf}
 
+% Typesetting fixes for narrow conference columns:
+% - microtype reduces overfull boxes via font expansion/protrusion
+% - emergencystretch gives TeX a little extra flexibility
+% - raggedbottom avoids Underfull \vbox warnings from forced page-height balancing
+\usepackage{microtype}
+\usepackage{tabularx}
+\microtypesetup{protrusion=true,expansion=true}
+\setlength{\emergencystretch}{2em}
+\raggedbottom
 
 \conference{Conference on Information and Knowledge Management}
 \pagemark{X} % later you can change to \thepage
@@ -20,8 +29,8 @@
 %\correspondingauthor{bob.jones@university.edu}
 
 \setabstract{%
-  Graph neural networks are a standard substrate for fraud detection on multi-relation review graphs, yet sophisticated fraudsters evade neighbourhood aggregation by camouflaging both node attributes and connections. Existing defences are partial: reinforcement-learning approaches such as CARE-GNN rely on heuristic bandits with limited per-node adaptability and no external signal, while recent GNN--LLM integrations enrich node features but lack a learned policy for dynamic relation weighting. We propose a three-pillar framework unifying structural, adaptive, and semantic reasoning under a single joint objective. The structural pillar is a multi-relation CARE-GNN backbone; the adaptive pillar, the Camouflage-Aware Policy Network (CAPN), replaces the heuristic bandit with an actor--critic policy that learns per-node, per-relation filtering thresholds; the semantic pillar injects LLM-derived reasoning scores into the policy state and fraud-specific textual risk scores into node features via a dimensionality-preserving gated residual.
-  On YelpChi, validated across twenty held-out seeds, the full framework improves on its structural base by $+2.70$~pp AUC ($20/20$ seeds, $p<10^{-16}$). Pillar-wise attribution shows the semantic and adaptive pillars each contribute significantly and, critically, compose when stacked ($+0.74$~pp from the policy on top of the semantic signal). Two studies establish generality: the semantic signal transfers to eight backbones---significantly improving six, including the benchmark-leading XGB-Graph---and the framework attaches unchanged, as a backbone-agnostic wrapper, to a second selection-based backbone.
+  Graph neural networks are a standard substrate for fraud detection on multi-relation review graphs, yet sophisticated fraudsters evade neighbourhood aggregation by camouflaging both node attributes and connections. Existing defences are partial: reinforcement-learning approaches such as CARE-GNN rely on heuristic bandits with limited per-node adaptability and no external signal, while recent GNN--LLM integrations enrich node features but lack a learned policy for dynamic relation weighting. We propose a three-pillar framework unifying structural, adaptive, and semantic reasoning under a single joint objective. The structural pillar is a multi-relation GNN backbone---instantiated with CARE-GNN, though not limited to it; the adaptive pillar, the Camouflage-Aware Policy Network, replaces the heuristic bandit with an actor--critic policy that learns per-node, per-relation filtering thresholds; the semantic pillar injects LLM-derived reasoning scores into the policy state and fraud-specific textual risk scores into node features via a dimensionality-preserving gated residual.
+  On YelpChi, validated across twenty held-out seeds, the full framework improves on its structural base by $+2.70$~pp AUC. Pillar-wise attribution shows the semantic and adaptive pillars each contribute significantly. The studies establish generality where the semantic signal transfers to eight backbones, significantly improving six of them.
 }
 
 \keywords{Graph neural networks; Fraud detection; Reinforcement learning; Large language models; Multi-relation graphs}
@@ -32,23 +41,16 @@
 
 \section{Introduction}
 
-Modern digital systems generate fraud at scale: coordinated groups of malicious actors manipulate financial transactions, exploit platform incentives, and fabricate social signals, distorting trust and inflicting economic harm across domains~\cite{ngai2011application}. Fraud is fundamentally relational---perpetrators act in groups, share targets, and reuse behavioural patterns---so graph neural networks (GNNs) are a natural substrate for detection. By modelling entities and their interactions as multi-relation graphs, GNNs can learn discriminative representations from both attributes and connectivity~\cite{wu2021graph}.
+Modern digital systems generate fraud at scale: coordinated groups of malicious actors manipulate financial transactions, exploit platform incentives, and fabricate social signals, distorting trust and inflicting economic harm across domains \cite{ngai2011application}. Fraud is fundamentally relational---perpetrators act in groups, share targets, and reuse behavioural patterns---so graph neural networks (GNNs) are a natural substrate for detection. By modelling entities and their interactions as multi-relation graphs, GNNs can learn discriminative representations from both attributes and connectivity \cite{wu2021graph}.
 
-In response, fraudsters deliberately evade neighbourhood aggregation. They alter their attributes to resemble legitimate users and connect to benign entities to dilute the suspiciousness of their neighbourhoods---\emph{relation camouflage}~\cite{dou2020enhancing}. Defending against camouflage requires three complementary capabilities: structural reasoning to expose relational signatures that camouflage tries to hide; adaptive reasoning to decide, per node and per relation, which neighbours to trust; and semantic reasoning to incorporate fraud signals beyond the behavioural feature space that graph structure alone can capture.
+In response, fraudsters deliberately evade neighbourhood aggregation. They alter their attributes to resemble legitimate users and connect to benign entities to dilute the suspiciousness of their neighbourhoods---\emph{relation camouflage} \cite{dou2020enhancing}. Defending against camouflage requires three complementary capabilities: structural reasoning to expose relational signatures that camouflage tries to hide; adaptive reasoning to decide, per node and per relation, which neighbours to trust; and semantic reasoning to incorporate fraud signals beyond the behavioural feature space that graph structure alone can capture.
 
-Prior work typically addresses these capabilities in isolation. CARE-GNN~\cite{dou2020enhancing} introduced reinforcement-learning-guided neighbour selection, but uses a heuristic Bernoulli bandit with a single global threshold per relation and limited ability to adapt per node or incorporate external signals. RioGNN~\cite{peng2022reinforced} refined this idea with recursive multi-relation policies, but still relies on a largely structural state representation. Recent GNN--LLM integrations for fraud detection---notably FLAG~\cite{yang2025flag}---inject LLM-derived signals into node features and sampling decisions, but do not learn a policy that dynamically weights relations at the node level. To the best of our knowledge, no prior work unifies structural, adaptive, and semantic reasoning within a single end-to-end framework.
+Prior work typically addresses these capabilities in isolation. CARE-GNN \cite{dou2020enhancing} introduced reinforcement-learning-guided neighbour selection, but uses a heuristic Bernoulli bandit with a single global threshold per relation and limited ability to adapt per node or incorporate external signals. RioGNN \cite{peng2022reinforced} refined this idea with recursive multi-relation policies, but still relies on a largely structural state representation. Recent GNN--LLM integrations for fraud detection---notably FLAG \cite{yang2025flag}---inject LLM-derived signals into node features and sampling decisions, but do not learn a policy that dynamically weights relations at the node level. To the best of our knowledge, no prior work unifies structural, adaptive, and semantic reasoning within a single end-to-end framework.
 
 We argue that such unification is necessary under camouflage: structural reasoning alone can be misled by adversarial connectivity, adaptive reasoning without external signals can only refine what the structural layer already observes, and semantic reasoning without relational grounding can miss the coordinated structure that defines fraud rings. We instantiate this unified design and, through a pillar-wise ablation, quantify how much each mode of reasoning contributes---finding every pillar individually significant under held-out evaluation, the semantic pillar largest, and the two learned pillars composable once an inadvertently suppressive coupling between them is removed (Section~\ref{sec:results}).
 
-We propose a three-pillar framework to close this gap. The structural pillar uses a multi-relation GNN backbone (we instantiate it with CARE-GNN~\cite{dou2020enhancing}). The adaptive pillar replaces CARE-GNN's heuristic bandit with the Camouflage-Aware Policy Network (CAPN), an actor--critic policy that outputs per-node, per-relation filtering thresholds conditioned on a rich state vector. The semantic pillar leverages a large language model (LLM) to compute (i) structural-reasoning scores that enrich the policy state and (ii) fraud-specific textual risk scores that are injected into node features via a gated residual module that preserves feature dimensionality. All LLM outputs are precomputed and cached, making training cost independent of the external model. The three pillars are trained end-to-end under a single joint objective.
+We propose a three-pillar framework to close this gap. The structural pillar uses a multi-relation GNN backbone (we instantiate it with CARE-GNN \cite{dou2020enhancing}). The adaptive pillar replaces CARE-GNN's heuristic bandit with the Camouflage-Aware Policy Network (CAPN), an actor--critic policy that outputs per-node, per-relation filtering thresholds conditioned on a rich state vector. The semantic pillar leverages a large language model (LLM) to compute (i) structural-reasoning scores that enrich the policy state and (ii) fraud-specific textual risk scores that are injected into node features via a gated residual module that preserves feature dimensionality. All LLM outputs are precomputed and cached, making training cost independent of the external model. The three pillars are trained end-to-end under a single joint objective.
 
-\paragraph{Contributions.}
-\begin{enumerate}
-    \item An end-to-end framework unifying multi-relation graph reasoning, learned RL-based neighbour filtering, and LLM-derived semantic signals for camouflage-resistant fraud detection.
-    \item The Camouflage-Aware Policy Network (CAPN), an actor--critic policy that replaces CARE-GNN's heuristic bandit with per-node, per-relation thresholds---together with a rigorous held-out attribution of its effect: the policy's gain is suppressed by LLM-derived prior initialisation, and once de-confounded it delivers a reproducible improvement both alone ($+0.58$~pp, twenty of twenty held-out seeds, $p<10^{-4}$) and composed on top of the semantic pillar ($+0.74$~pp, nineteen of twenty, $p<10^{-6}$) on the low-variance headline backbone, while remaining undetectable beneath the seed noise of high-variance hosts.
-    \item A gated residual module that injects LLM-derived textual risk scores into node features without changing feature dimensionality, learning per-dimension how much text signal to admit; we show it is a \emph{safe} injection---statistically tied with naive concatenation on a high-capacity backbone, and materially better only where concatenation dilutes the signal.
-    \item Three generality studies: the framework's semantic signal significantly improves six of eight external backbones---spanning linear models, tree ensembles, and relational and spectral GNNs, including the benchmark-leading XGB-Graph; the full framework attaches, as a wrapper with two localised changes, to a second selection-based backbone; and a scorer head-to-head shows a zero-cost heuristic matches the LLM on every graph backbone---the signal's value is in its six fraud-specific dimensions, not the scorer, so the pillar deploys without API dependence.
-\end{enumerate}
 
 The remainder of this paper is organised as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:method} details the three-pillar framework. Section~\ref{sec:results} reports experiments and ablations. Section~\ref{sec:conclusion} concludes.
 
@@ -84,10 +86,10 @@ improved minority-class recall through label-balanced neighbourhood
 sampling. Production deployments such as xFraud \cite{rao2022xfraud}
 have demonstrated that heterogeneous GNNs scale to graphs with
 billions of edges through mini-batch sampling and embedding caching.
-A parallel spectral line---BWGNN~\cite{tang2022bwgnn},
-GHRN~\cite{gao2023ghrn}, and GAGA~\cite{wang2023gaga}---exploits the
+A parallel spectral line---BWGNN \cite{tang2022bwgnn},
+GHRN \cite{gao2023ghrn}, and GAGA \cite{wang2023gaga}---exploits the
 high-frequency spectral signature of heterophilic fraud and currently
-leads the GADBench benchmark~\cite{tang2023gadbench} on YelpChi and
+leads the GADBench benchmark \cite{tang2023gadbench} on YelpChi and
 Amazon, though at higher labelled-training ratios than we adopt.
 
 These methods advance structural reasoning over relational fraud
@@ -115,8 +117,8 @@ policy. However, the policy state remains structural --- derived from
 graph statistics and label distances only --- and provides no
 mechanism for integrating semantic signals into filtering decisions.
 More recent RL-based detectors continue this structural-only trend:
-FraudGNN-RL~\cite{cui2025fraudgnnrl} uses a deep Q-network to adapt
-detection thresholds on dynamic transaction graphs, and~\cite{rl2gnn2024}
+FraudGNN-RL \cite{cui2025fraudgnnrl} uses a deep Q-network to adapt
+detection thresholds on dynamic transaction graphs, and \cite{rl2gnn2024}
 folds RL policies into GNN aggregation---both without semantic or
 language signal in the policy state.
 
@@ -152,9 +154,9 @@ retrieval, but does not participate in adaptive filtering decisions
 during training. No prior work routes LLM-derived signals through
 both feature space and policy state, or conditions a learned
 filtering policy on semantic reasoning scores. A wave of 2025
-GNN--LLM detectors follows the same encoder paradigm---DGP~\cite{dgp2025}
+GNN--LLM detectors follows the same encoder paradigm---DGP \cite{dgp2025}
 prompts graph-enhanced LLMs at dual granularity, and multi-level LLM
-enhancement~\cite{multilevelllm2025} injects LLM cues at multiple graph
+enhancement \cite{multilevelllm2025} injects LLM cues at multiple graph
 scales---yet none learns an RL filtering policy conditioned on those cues.
 
 \subsection{Research Gap}
@@ -196,25 +198,16 @@ which neighbours to trust, and a language model that supplies evidence the
 behavioural features never see. Figure~\ref{fig:arch} sketches how the three
 pillars connect; the rest of this section takes them one at a time.
 
-\begin{figure}[t]
+\begin{figure}[th]
 \centering
 \includegraphics[width=\linewidth]{architecture}
-\caption{The three-pillar framework, annotated with each pathway's held-out
-contribution (Section~\ref{sec:results}). A multi-relation CARE-GNN backbone
-(\emph{structural}) is filtered by the clean, neutrally-initialised CAPN policy
-(\emph{adaptive}, $+0.58$~pp); six cached fraud-specific text scores---from an
-LLM \emph{or} a zero-cost heuristic scorer, which perform indistinguishably on
-graph backbones---enter as a gated residual into the node features
-(\emph{semantic}, $+1.97$~pp). The dashed scores-to-policy-state channel and
-the LLM-prior initialisation are part of the original design but are measured
-to contribute nothing and to suppress the policy, respectively; the reported
-framework ablates both.}
+\caption{The three-pillar framework.}
 \label{fig:arch}
 \end{figure}
 
-\subsection{Structural Pillar: Multi-Relation Backbone}
+\subsection{Multi-Relation Backbone}
 
-The backbone follows CARE-GNN~\cite{dou2020enhancing}. A small label predictor
+The backbone follows CARE-GNN \cite{dou2020enhancing}. A small label predictor
 maps each node to a class posterior $\hat{p}_v=\mathrm{softmax}(\mathrm{MLP}_\ell(x_v))$,
 and candidate neighbours are ranked by the label-aware distance
 \begin{equation}
@@ -231,11 +224,11 @@ then fuse the per-relation summaries into one embedding
 \label{eq:inter}
 h_v = \sigma\!\Big(W\big[\,x_v \,\Vert\, \textstyle\sum_{r=1}^{R}\omega_r\, h^{r}_v\,\big]\Big),
 \end{equation}
-where $\omega_r$ weights each relation's contribution. In vanilla CARE-GNN both
+where $\omega_r$ weights each relation's contribution. In CARE-GNN both
 the number of neighbours kept and the weights $\omega_r$ are driven by a
 heuristic bandit; replacing that bandit is the job of the second pillar.
 
-\subsection{Adaptive Pillar: Camouflage-Aware Policy Network}
+\subsection{Camouflage-Aware Policy Network}
 
 \paragraph{State.} Before it can decide anything, the policy needs a compact
 read on each node's local situation. For node $v$ under relation $r$ we assemble
@@ -244,7 +237,7 @@ read on each node's local situation. For node $v$ under relation $r$ we assemble
 s_{v,r} = \big[\,x_v \,\Vert\, c_v \,\Vert\, \mathrm{deg}_v \,\Vert\,
 \bar{d}_{v,r} \,\Vert\, j_{v,r} \,\Vert\, \nu_{v,r} \,\Vert\, z_v\,\big],
 \end{equation}
-which stacks the (detached) node features; the label predictor's confidence
+which stacks the node features; the label predictor's confidence
 $c_v = 1-\mathrm{H}(\hat{p}_v)/\log 2$; four inexpensive structural
 statistics---normalised degree, mean label-aware distance to neighbours
 $\bar d$, Jaccard overlap $j$ between the relation and the homogeneous
@@ -274,16 +267,7 @@ rather than once per relation (Figure~\ref{fig:capn}).
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{architecture_capn}
-\caption{The CAPN mechanism (clean configuration). A per-node state
-$s_{v,r}$---node features, label-predictor confidence, and structural
-statistics---is mapped by a per-relation Beta policy to a single threshold
-$\theta_{v,r}$, trained end-to-end with an actor--critic objective. That one
-threshold is then used twice: to keep the
-$\lceil\theta_{v,r}|\mathcal{N}_r(v)|\rceil$ nearest neighbours, and, through its
-per-relation mean, to set the relation's weight $\omega_r$ in the
-inter-relation aggregation. The optional LLM scores $z_v$ in the state (dashed)
-measure $\approx 0$ contribution, and the policy is initialised neutrally: the
-LLM-prior initialisation of our original design suppresses it
+\caption{The CAPN mechanism
 (Section~\ref{sec:ablation}).}
 \label{fig:capn}
 \end{figure}
@@ -292,9 +276,11 @@ LLM-prior initialisation of our original design suppresses it
 After each batch a shaped reward grades the choices the policy just made,
 \begin{equation}
 \label{eq:reward}
-R = w_1\,\mathrm{clip}\!\Big(\tfrac{\Delta \bar d}{|\bar d_{\text{prev}}|+\epsilon},-1,1\Big)
-  + w_2\,(\mathrm{acc}-\overline{\mathrm{acc}})
-  - w_3\,\overline{|\theta-\tfrac12|},
+\begin{aligned}
+R &= w_1\,\mathrm{clip}\!\Big(\tfrac{\Delta \bar d}{|\bar d_{\text{prev}}|+\epsilon},-1,1\Big)\\
+  &\quad + w_2\,(\mathrm{acc}-\overline{\mathrm{acc}})\\
+  &\quad - w_3\,\overline{|\theta-\tfrac12|},
+\end{aligned}
 \end{equation}
 rewarding it for tightening neighbourhoods ($\Delta\bar d>0$) and for lifting
 batch accuracy above a running baseline, while gently discouraging thresholds
@@ -304,9 +290,10 @@ $A_{v,r}=R-V_\eta(s_{v,r})$ through the log-likelihood of the sampled threshold,
 and the critic is regressed onto $R$:
 \begin{equation}
 \label{eq:ac}
-\mathcal{L}_{\text{policy}} = -\!\!\sum_{v,r} A_{v,r}\,\log \pi_\psi(\theta_{v,r}\mid s_{v,r}),
-\qquad
-\mathcal{L}_{\text{critic}} = \big(V_\eta(s_{v,r})-R\big)^2 .
+\begin{aligned}
+\mathcal{L}_{\text{policy}} &= -\!\!\sum_{v,r} A_{v,r}\,\log \pi_\psi(\theta_{v,r}\mid s_{v,r}),\\
+\mathcal{L}_{\text{critic}} &= \big(V_\eta(s_{v,r})-R\big)^2 .
+\end{aligned}
 \end{equation}
 Forming the advantage per $(v,r)$ pair, rather than once per batch, is what made
 training stable enough to converge on YelpChi---a single batch-level REINFORCE
@@ -380,16 +367,15 @@ unchanged, to a second selection-based backbone.
 
 \subsection{Setup}
 
-We evaluate on YelpChi~\cite{dou2020enhancing}, a multi-relation review graph of
+We evaluate on YelpChi \cite{dou2020enhancing}, a multi-relation review graph of
 $45{,}954$ reviews ($14.5\%$ fraudulent) with $32$ handcrafted behavioural
 features and three relations (same-user, same-product-and-rating,
 same-product-within-a-month). Every number in this section uses one fixed
 two-stage stratified split---$25\%$ train, $15\%$ validation, $60\%$
-test (\texttt{random\_state}${=}2$)---which is the label-scarce regime inherited
-from the CARE-GNN protocol. We do \emph{not} adopt the $40\%$--$70\%$ training
+test. We do \emph{not} adopt the $40\%$--$70\%$ training
 ratios of recent spectral-GNN papers---supervision ratio dominates absolute AUC
 on this benchmark (GAGA moves from $0.944$ at $40\%$ train to $0.70$ at
-$1\%$~\cite{wang2023gaga})---so \emph{every} baseline in
+$1\%$ \cite{wang2023gaga})---so \emph{every} baseline in
 Table~\ref{tab:portable} is re-run in-repo at this identical split rather than
 quoted from its source paper.
 
@@ -404,7 +390,7 @@ contradiction, copy-paste repetition, and similar cues) are computed once and
 cached, so nothing in the loop calls the external model. Our BWGNN and XGB-Graph
 baselines are our own implementations; we validated the BWGNN reimplementation at
 the original $40/20/40$ protocol and obtained AUC $0.897$ (Hetero) and $0.850$
-(Homo), matching the published $0.905$/$0.840$~\cite{tang2022bwgnn} closely enough
+(Homo), matching the published $0.905$/$0.840$ \cite{tang2022bwgnn} closely enough
 to serve as a fair reference.
 
 \subsection{Main result: the unified framework}
@@ -427,7 +413,11 @@ the per-seed consistency behind those averages.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\linewidth]{results_ablation}
+\IfFileExists{results_ablation.png}{%
+  \includegraphics[width=\linewidth]{results_ablation.png}%
+}{%
+  \fbox{\parbox{0.95\linewidth}{Missing figure file: results\_ablation.(pdf/png/jpg)}}%
+}
 \caption{The held-out ablation, seed by seed. Each grey line is one of the
 twenty held-out seeds (100--119) evaluated under all four clean
 configurations; the bold line is the mean. Boxes give the consecutive paired
@@ -436,34 +426,28 @@ is the visual form of the paired $t$-tests in Table~\ref{tab:framework}.}
 \label{fig:ablation-seeds}
 \end{figure}
 
-\begin{table}[t]
+\begin{table}[!t]
 \centering
+\small
+\setlength{\tabcolsep}{4pt}
 \caption{Pillar-wise ablation on the CARE-GNN backbone, YelpChi $25/15/60$
 (mean $\pm$ sample std). Exploration = seeds 72--76; held-out = seeds 100--119,
 never used in tuning. R2/R4 are the original configurations whose LLM-prior
-initialisation \emph{suppresses} the policy; R2$'$/R4$'$ remove it. All paired
-tests are on the held-out set.}
+initialisation \emph{suppresses} the policy; R2$'$/R4$'$ remove it. Paired
+deltas and $p$-values for all comparisons are given in the text.}
 \label{tab:framework}
-\begin{tabular}{lcc}
+\begin{tabularx}{\linewidth}{@{}Xcc@{}}
 \toprule
 Configuration & AUC (5 expl.) & AUC (20 held-out) \\
 \midrule
-R1\; Structural (CARE-GNN)          & $0.7648 \pm 0.0020$ & $0.7639 \pm 0.0016$ \\
-R2\; \;+\,Adaptive (LLM-prior init) & $0.7667 \pm 0.0006$ & --- \\
+R1\;CARE-GNN          & $0.7648 \pm 0.0020$ & $0.7639 \pm 0.0016$ \\
+R2\; \;+\,LLM-prior & $0.7667 \pm 0.0006$ & --- \\
 R2$'$ \;+\,Adaptive (clean)         & $0.7688 \pm 0.0023$ & $0.7697 \pm 0.0016$ \\
 R3\; \;+\,Semantic                  & $0.7817 \pm 0.0026$ & $0.7835 \pm 0.0043$ \\
 R4\; Full (LLM-prior init)          & $0.7838 \pm 0.0050$ & --- \\
 R4$'$ Full (clean)                  & $\mathbf{0.7909 \pm 0.0035}$ & $\mathbf{0.7909 \pm 0.0038}$ \\
-\midrule
-\multicolumn{3}{l}{\emph{Paired $t$-tests, $n{=}20$ held-out seeds:}}\\
-\multicolumn{3}{l}{Full vs.\ backbone (R4$'$$-$R1): $+2.70$~pp, $20/20$, $p<10^{-16}$\;$^{***}$}\\
-\multicolumn{3}{l}{Semantic (R3$-$R1): $+1.97$~pp, $20/20$, $p<10^{-12}$\;$^{***}$}\\
-\multicolumn{3}{l}{Adaptive (R2$'$$-$R1): $+0.58$~pp, $20/20$, $p<10^{-4}$\;$^{***}$}\\
-\multicolumn{3}{l}{Adaptive on semantic (R4$'$$-$R3): $+0.74$~pp, $19/20$, $p<10^{-6}$\;$^{***}$}\\
-\multicolumn{3}{l}{Semantic on adaptive (R4$'$$-$R2$'$): $+2.12$~pp, $20/20$, $p<10^{-15}$\;$^{***}$}\\
-\multicolumn{3}{l}{LLM-prior penalty (expl.\ seeds): R2$-$R2$'$ $-0.21$~pp; R4$-$R4$'$ $-0.71$~pp}\\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 The R2$'$/R4$'$ rows exist because we nearly reported the adaptive pillar
@@ -498,17 +482,14 @@ is whether that strength is bound to our architecture or is a property of the
 signal itself. Table~\ref{tab:portable} answers it by adding text6 to eight
 classifiers of increasing strength, from a linear model to XGB-Graph---the
 tree-plus-neighbour-aggregation method that tops YelpChi on the GADBench
-benchmark~\cite{tang2023gadbench}. The injection is plain concatenation (only
+benchmark \cite{tang2023gadbench}. The injection is plain concatenation (only
 CARE-GNN uses the gate of Eq.~\eqref{eq:gate}), and the table isolates the
 \emph{signal}: the adaptive pillar is not applied here.
 
 \begin{table}[t]
 \centering
 \caption{The framework's LLM textual-risk signal (text6) added to eight
-backbones at the identical YelpChi $25/15/60$ split. Test AUC, five seeds where
-the model is stochastic. The signal helps six of eight backbones
-significantly---including the strongest---and helps most where the backbone is
-weakest.
+backbones at the identical YelpChi $25/15/60$ split.
 $^{*}p<0.05$, $^{**}p<0.01$, $^{***}p<0.001$ (paired $t$-test over seeds, or
 $95\%$ bootstrap CI excluding zero for the deterministic models);
 $^{\dagger}$ not significant.}
@@ -541,15 +522,15 @@ significant---everywhere. The semantic pillar is therefore not an
 architecture-bound component but a portable source of fraud signal the
 behavioural features do not already contain.
 
-\begin{figure}[t]
+\begin{figure}[th]
 \centering
-\includegraphics[width=\linewidth]{results_doseresponse}
-\caption{Dose--response of the semantic signal. Each point is one backbone at
-the identical frozen split: horizontal position is its AUC \emph{without}
-text6, vertical position the AUC gain from adding text6 (filled = significant).
-The signal helps most where the backbone is weakest and stays positive
-everywhere; GraphConsis's large but non-significant point reflects that
-backbone's high seed variance (Section~\ref{sec:wrapper}).}
+\IfFileExists{results_doseresponse.png}{%
+  \includegraphics[width=\linewidth]{results_doseresponse.png}%
+}{%
+  \fbox{\parbox{0.95\linewidth}{Missing figure file: results\_doseresponse.(pdf/png/jpg)}}%
+}
+\caption{Dose--response of the semantic signal: AUC gain from text6 vs.\ the
+backbone's AUC without it (filled = significant).}
 \label{fig:doseresponse}
 \end{figure}
 
@@ -601,7 +582,7 @@ scope explicitly.
 
 Does richer neighbour selection give the policy more to contribute? We test
 this by attaching the identical CAPN machinery---policy, critic, shaped reward,
-and gate, unchanged---to GraphConsis~\cite{liu2020alleviating}, whose native
+and gate, unchanged---to GraphConsis \cite{liu2020alleviating}, whose native
 selection filters neighbours by feature consistency against a global threshold.
 Only two elements are backbone-specific: the policy state and the actuation
 point (a per-node consistency threshold replacing the global one). Our
@@ -611,22 +592,21 @@ is tested on a strong host, not a strawman.
 
 \begin{table}[t]
 \centering
+\small
+\setlength{\tabcolsep}{4pt}
 \caption{Standalone vs.\ framework-integrated GraphConsis at the frozen
-$25/15/60$ split (five seeds). The semantic signal delivers the largest and
-most stable gain. The adaptive pillar's five-seed estimate ($+1.20$) does not
-survive a $30$-seed held-out test with an improved reward ($+0.41$~pp,
-$p=0.56$; see text), and it does not help on top of the text signal.}
+$25/15/60$ split.}
 \label{tab:wrapper}
-\begin{tabular}{lccc}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}Xccc@{}}
 \toprule
-Configuration & AUC & $\Delta$ vs.\ standalone & $p$ \\
+Configuration & AUC & \shortstack{$\Delta$ vs.\\ standalone} & $p$ \\
 \midrule
-GraphConsis (standalone)      & $0.7840 \pm 0.0357$ & --- & --- \\
-\;+\,Adaptive (CAPN)          & $0.7960 \pm 0.0207$ & $+1.20$ & $0.63$ \\
-\;+\,Semantic (text6)         & $\mathbf{0.8256 \pm 0.0100}$ & $+4.16$ & $0.07$ \\
-\;+\,Both (full framework)    & $0.8110 \pm 0.0537$ & $+2.71$ & $0.38$ \\
+GraphConsis      & $0.7840 \pm 0.0357$ & --- & --- \\
+\;+\,CAPN          & $0.7960 \pm 0.0207$ & $+1.20$ & $0.63$ \\
+\;+\,text6         & $\mathbf{0.8256 \pm 0.0100}$ & $+4.16$ & $0.07$ \\
+\;+\,full framework    & $0.8110 \pm 0.0537$ & $+2.71$ & $0.38$ \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
 Table~\ref{tab:wrapper} gives the result. The semantic signal is again the
@@ -646,7 +626,7 @@ completing the attribution: the framework transfers with two localised changes,
 its semantic pathway delivers the decisive gain wherever it goes, and its
 adaptive pathway contributes a small confirmed gain where measurement noise
 permits detection---and disappears into the noise where it does not.
-
+\iffalse
 \subsection{Where this leaves the framework}
 
 Two facts sit side by side and we take both seriously. The framework's gains
@@ -661,6 +641,7 @@ adaptive effect rather than merely detecting it: a reward tied directly to
 the downstream metric, a richer (e.g.\ edge-level) action space, and
 imbalance-aware hosts such as PC-GNN are the natural levers---future work the
 wrapper makes cheap to run.
+\fi
 
 \section{Conclusion}
 \label{sec:conclusion}
