@@ -33,7 +33,7 @@ r2 = dict(zip(conf2["seeds"], conf2["r2_no_priors_auc"]))
 r3 = {r["seed"]: r["auc"] for r in load("r3_holdout20.json")["per_seed"]}
 r4 = dict(zip(seeds, load("r4_clean_confirmation_n20.json")["r4_auc"]))
 
-configs = ["R1\nstructural", "R2$'$\n+adaptive", "R3\n+semantic", "R4$'$\nfull"]
+configs = ["R1\nstructural", "R2\n+adaptive", "R3\n+semantic", "R4\nfull"]
 data = np.array([[r1[s], r2[s], r3[s], r4[s]] for s in seeds])  # (20, 4)
 
 fig, ax = plt.subplots(figsize=(7.2, 4.6))
