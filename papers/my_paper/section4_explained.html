@@ -1,0 +1,634 @@
+<title>Section 4, Explained — What the Experiments Prove</title>
+
+<style>
+  :root {
+    --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EDF0F4;
+    --ink:#171C24; --ink-soft:#4A5464; --ink-faint:#7B8696; --rule:#D9DEE6;
+
+    /* validated categorical series — see note in the methods panel */
+    --s1:#1B6EC2;  /* structural / R1 */
+    --s2:#B5700C;  /* adaptive / R2 */
+    --s3:#0A9D5E;  /* semantic / R3 */
+    --s4:#8E4FA8;  /* full / R4 */
+    --base:#6F7A8A;
+
+    --confirmed:#0E7C7B; --null:#9A6A08; --gap:#B03A3A;
+    --tint1:#E8F1FA; --tint2:#FAF1E3; --tint3:#E6F6EE; --tint4:#F3EBF8;
+
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,monospace;
+
+    --step--1:clamp(0.80rem,0.78rem + 0.1vw,0.86rem);
+    --step-0:clamp(1.00rem,0.97rem + 0.15vw,1.08rem);
+    --step-1:clamp(1.20rem,1.12rem + 0.4vw,1.40rem);
+    --step-2:clamp(1.50rem,1.35rem + 0.7vw,1.90rem);
+    --step-3:clamp(1.95rem,1.70rem + 1.2vw,2.70rem);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:#10141A; --surface:#171C24; --surface-2:#1E242E;
+      --ink:#E6EAF0; --ink-soft:#A8B2C0; --ink-faint:#76818F; --rule:#2A323E;
+      --s1:#3F88C4; --s2:#C0821F; --s3:#1FA46C; --s4:#9C6CBC; --base:#808B9B;
+      --confirmed:#43B5B3; --null:#D4A338; --gap:#E07878;
+      --tint1:#16222E; --tint2:#2A2114; --tint3:#152417; --tint4:#221A2A;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#10141A;--surface:#171C24;--surface-2:#1E242E;
+    --ink:#E6EAF0;--ink-soft:#A8B2C0;--ink-faint:#76818F;--rule:#2A323E;
+    --s1:#3F88C4;--s2:#C0821F;--s3:#1FA46C;--s4:#9C6CBC;--base:#808B9B;
+    --confirmed:#43B5B3;--null:#D4A338;--gap:#E07878;
+    --tint1:#16222E;--tint2:#2A2114;--tint3:#152417;--tint4:#221A2A;
+  }
+  :root[data-theme="light"]{
+    --ground:#F6F7F9;--surface:#FFFFFF;--surface-2:#EDF0F4;
+    --ink:#171C24;--ink-soft:#4A5464;--ink-faint:#7B8696;--rule:#D9DEE6;
+    --s1:#1B6EC2;--s2:#B5700C;--s3:#0A9D5E;--s4:#8E4FA8;--base:#6F7A8A;
+    --confirmed:#0E7C7B;--null:#9A6A08;--gap:#B03A3A;
+    --tint1:#E8F1FA;--tint2:#FAF1E3;--tint3:#E6F6EE;--tint4:#F3EBF8;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+       font-size:var(--step-0);line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:61rem;margin:0 auto;padding:0 1.5rem 6rem}
+  .prose{max-width:36rem}
+
+  header.masthead{padding:4rem 0 2.5rem;border-bottom:2px solid var(--ink);margin-bottom:3rem}
+  .eyebrow{font-family:var(--mono);font-size:var(--step--1);letter-spacing:.14em;
+           text-transform:uppercase;color:var(--ink-faint);margin:0 0 1rem}
+  h1{font-family:var(--serif);font-size:var(--step-3);line-height:1.08;font-weight:600;
+     letter-spacing:-.015em;text-wrap:balance;margin:0 0 1.25rem}
+  .standfirst{font-family:var(--serif);font-size:var(--step-1);line-height:1.5;
+              color:var(--ink-soft);max-width:38rem;margin:0}
+
+  section{margin:4.5rem 0 0}
+  .sec-head{display:flex;align-items:baseline;gap:1rem;margin-bottom:1.5rem}
+  .sec-num{font-family:var(--mono);font-size:var(--step--1);color:var(--ink-faint);
+           letter-spacing:.08em;flex:none;padding-top:.35rem}
+  h2{font-family:var(--serif);font-size:var(--step-2);font-weight:600;letter-spacing:-.01em;
+     line-height:1.15;margin:0;text-wrap:balance}
+  h3{font-size:var(--step-0);font-weight:650;margin:2.25rem 0 .6rem}
+  p{margin:0 0 1.1rem}
+  .prose p:last-child{margin-bottom:0}
+  strong{font-weight:650}
+
+  figure{margin:2.25rem 0}
+  .figframe{background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+            padding:1.5rem 1.25rem;overflow-x:auto}
+  figure svg{display:block;width:100%;height:auto;min-width:520px}
+  figcaption{font-size:var(--step--1);color:var(--ink-soft);line-height:1.55;
+             margin-top:.85rem;max-width:42rem}
+  figcaption b{color:var(--ink);font-weight:600}
+  .fig-title{font-size:var(--step-0);font-weight:650;margin:0 0 .25rem}
+  .fig-sub{font-size:var(--step--1);color:var(--ink-faint);margin:0 0 1.1rem}
+
+  .legend{display:flex;flex-wrap:wrap;gap:.9rem;margin:0 0 1rem}
+  .lg{display:inline-flex;align-items:center;gap:.4rem;font-size:var(--step--1);color:var(--ink-soft)}
+  .sw{width:11px;height:11px;border-radius:2px;flex:none}
+
+  .chip{display:inline-flex;align-items:center;gap:.35rem;font-family:var(--mono);
+        font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;padding:.18rem .45rem;
+        border-radius:2px;border:1px solid currentColor;white-space:nowrap}
+  .chip.ok{color:var(--confirmed)} .chip.nul{color:var(--null)} .chip.gapc{color:var(--gap)}
+
+  .aside{border:1px dashed var(--rule);border-left:3px solid var(--gap);background:var(--surface);
+         padding:1rem 1.15rem;margin:1.5rem 0;font-size:var(--step--1);line-height:1.6}
+  .aside .lbl{display:block;font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
+              text-transform:uppercase;color:var(--gap);margin-bottom:.45rem;font-weight:600}
+  .aside p{margin:0 0 .7rem;color:var(--ink-soft)} .aside p:last-child{margin:0}
+  .aside b{color:var(--ink);font-weight:600}
+
+  .note{border-left:3px solid var(--confirmed);padding:.1rem 0 .1rem 1rem;margin:1.5rem 0;
+        font-size:var(--step--1);color:var(--ink-soft);line-height:1.6}
+  .note .lbl{display:block;font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
+             text-transform:uppercase;color:var(--confirmed);margin-bottom:.35rem;font-weight:600}
+  .note b{color:var(--ink);font-weight:600}
+
+  .tbl-wrap{overflow-x:auto;margin:1.25rem 0}
+  table{border-collapse:collapse;width:100%;font-size:var(--step--1);font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:.5rem .75rem;border-bottom:1px solid var(--rule)}
+  th{font-family:var(--mono);font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;
+     color:var(--ink-faint);font-weight:500}
+  td.num{text-align:right}
+  tbody tr:last-child td{border-bottom:none}
+  caption{caption-side:top;text-align:left;font-size:var(--step--1);color:var(--ink-faint);
+          padding-bottom:.5rem;font-family:var(--mono);letter-spacing:.05em;text-transform:uppercase}
+
+  code{font-family:var(--mono);font-size:.88em;background:var(--surface-2);padding:.1em .35em;border-radius:2px}
+  hr.div{border:none;border-top:1px solid var(--rule);margin:3.5rem 0 0}
+  :focus-visible{outline:2px solid var(--s2);outline-offset:3px}
+  svg text{font-family:var(--sans)}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Paper walkthrough · Section 4 of 5</p>
+  <h1>What the experiments prove — and what they are quietly assumed to prove</h1>
+  <p class="standfirst">Section 4 asks two questions: does the framework beat its base, and how far does it
+  carry beyond it. The measurements are careful. The inferences drawn from them are where five reviewers
+  converged.</p>
+</header>
+
+<!-- ===== 4.1 ===== -->
+<section>
+  <div class="sec-head"><span class="sec-num">4.1</span><h2>Setup — and the word doing too much work</h2></div>
+
+  <div class="prose">
+    <p>Everything runs on YelpChi: 45,954 reviews, 14.5% fraudulent, 32 behavioural features, three relations.
+    One fixed two-stage stratified split — <strong>25% train, 15% validation, 60% test</strong>. Metrics are
+    read at the checkpoint with the best validation AUC.</p>
+
+    <p>Two protocol decisions here are genuinely good. The paper refuses to quote numbers from other papers,
+    because the supervision ratio dominates absolute AUC on this benchmark — GAGA moves from 0.944 at 40% train
+    to 0.70 at 1%. So <em>every</em> baseline is re-run in-house at the identical split. And the BWGNN
+    reimplementation is validated against published numbers before being trusted: 0.897 / 0.850 against a
+    published 0.905 / 0.840.</p>
+
+    <p>Then there is the word <strong>"held-out."</strong> The paper reports twenty held-out <em>seeds</em>.
+    It is worth being precise about what that does and does not resample.</p>
+  </div>
+
+  <figure>
+    <p class="fig-title">What a "seed" actually varies</p>
+    <p class="fig-sub">The data partition is fixed once in code; seeds re-roll only the model.</p>
+    <div class="figframe">
+      <svg viewBox="0 0 740 272" role="img" aria-label="The dataset is split once and frozen; the twenty seeds only change model initialisation">
+        <g font-size="12">
+          <!-- dataset -->
+          <rect x="0" y="24" width="150" height="54" rx="3" fill="var(--surface-2)" stroke="var(--rule)"/>
+          <text x="75" y="46" text-anchor="middle" fill="var(--ink)" font-weight="650" font-size="12">YelpChi</text>
+          <text x="75" y="64" text-anchor="middle" fill="var(--ink-faint)" font-size="11">45,954 reviews</text>
+
+          <line x1="150" y1="51" x2="195" y2="51" stroke="var(--rule)" stroke-width="2"/>
+
+          <!-- split, frozen -->
+          <rect x="195" y="16" width="300" height="70" rx="3" fill="var(--tint1)" stroke="var(--s1)" stroke-width="1.5"/>
+          <text x="345" y="36" text-anchor="middle" fill="var(--s1)" font-weight="650" font-size="12">one split · random_state = 2 · never varies</text>
+          <rect x="207" y="46" width="69"  height="26" rx="2" fill="var(--s1)" opacity=".85"/>
+          <rect x="280" y="46" width="41"  height="26" rx="2" fill="var(--s1)" opacity=".5"/>
+          <rect x="325" y="46" width="158" height="26" rx="2" fill="var(--s1)" opacity=".22"/>
+          <text x="241" y="64" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="600">train 25%</text>
+          <text x="300" y="64" text-anchor="middle" fill="var(--ink)" font-size="10" font-weight="600">val 15</text>
+          <text x="404" y="64" text-anchor="middle" fill="var(--ink)" font-size="10.5" font-weight="600">test 60%</text>
+
+          <!-- seeds -->
+          <text x="0" y="124" fill="var(--ink-faint)" font-family="var(--mono)" font-size="10.5" letter-spacing="1">SEEDS 100–119 RE-ROLL ONLY THIS</text>
+          <g>
+            <rect x="0"   y="136" width="236" height="46" rx="3" fill="var(--tint2)" stroke="var(--s2)"/>
+            <text x="118" y="155" text-anchor="middle" fill="var(--s2)" font-size="11.5" font-weight="650">weight initialisation</text>
+            <text x="118" y="172" text-anchor="middle" fill="var(--ink-soft)" font-size="10.5">batch order · dropout masks</text>
+
+            <rect x="252" y="136" width="236" height="46" rx="3" fill="var(--surface-2)" stroke="var(--rule)" stroke-dasharray="4 3"/>
+            <text x="370" y="155" text-anchor="middle" fill="var(--ink-faint)" font-size="11.5" font-weight="650">which reviews are in test</text>
+            <text x="370" y="172" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">identical across all 20 seeds</text>
+
+            <rect x="504" y="136" width="236" height="46" rx="3" fill="var(--surface-2)" stroke="var(--rule)" stroke-dasharray="4 3"/>
+            <text x="622" y="155" text-anchor="middle" fill="var(--ink-faint)" font-size="11.5" font-weight="650">which reviews train the model</text>
+            <text x="622" y="172" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">identical across all 20 seeds</text>
+          </g>
+
+          <!-- consequence -->
+          <rect x="0" y="204" width="740" height="56" rx="3" fill="var(--surface)" stroke="var(--gap)" stroke-width="1.5"/>
+          <text x="16" y="226" fill="var(--gap)" font-size="11" font-family="var(--mono)" letter-spacing="1" font-weight="600">CONSEQUENCE</text>
+          <text x="16" y="246" fill="var(--ink-soft)" font-size="12">Every p-value in the paper measures: “would I get this again if I restarted training?” — not “would I get this on different data?”</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>This is the panel's second-biggest finding, and it is a one-line fact about the code</b>
+    (<code>train.py:268</code> hardcodes <code>random_state=2</code>). Adding more seeds drives the standard error
+    of a <i>split-conditional</i> estimate toward zero without touching the uncertainty that the paper's claims
+    are actually about. Two seats rated it Critical.</figcaption>
+  </figure>
+
+  <div class="aside">
+    <span class="lbl">The sharpest version of the objection</span>
+    <p>The Devil's Advocate pointed out the asymmetry: §4.1 <b>invokes split sensitivity</b> as the reason to
+    re-run every baseline rather than quote published numbers — then freezes a single split and attributes
+    p &lt; 10⁻¹⁶ to differences an order of magnitude smaller than the sensitivity it just invoked. The paper
+    applies the field's standard to its baselines and exempts itself.</p>
+  </div>
+</section>
+
+<hr class="div">
+
+<!-- ===== 4.2 ===== -->
+<section>
+  <div class="sec-head"><span class="sec-num">4.2</span><h2>The main result — and a metric that disagrees</h2></div>
+
+  <div class="prose">
+    <p>The pillar-wise ablation builds the framework one piece at a time on twenty seeds never used in tuning.
+    The paper reports AUC in the table; it also promised AP and F1-macro. Here are all three.</p>
+  </div>
+
+  <figure>
+    <p class="fig-title">The ablation across three metrics</p>
+    <p class="fig-sub">n = 20 held-out seeds (100–119). Each panel scaled to its own metric.</p>
+    <div class="figframe">
+      <svg viewBox="0 0 740 210" role="img" aria-label="AUC and AP rise across R1 to R4; F1-macro is flat and dips at R3">
+        <g font-size="11">
+          <!-- panel 1 AUC -->
+          <g transform="translate(0,0)">
+            <text x="0" y="12" fill="var(--ink)" font-size="12" font-weight="650">AUC</text>
+            <text x="200" y="12" text-anchor="end" fill="var(--confirmed)" font-size="11" font-weight="600">+2.70 pp</text>
+            <line x1="14" y1="20" x2="14" y2="140" stroke="var(--rule)"/>
+            <line x1="14" y1="140" x2="200" y2="140" stroke="var(--rule)"/>
+            <polyline points="34,127 87,107 140,59 193,34" fill="none" stroke="var(--ink-faint)" stroke-width="1.5"/>
+            <circle cx="34"  cy="127" r="6" fill="var(--s1)"><title>R1 structural — AUC 0.7639</title></circle>
+            <circle cx="87"  cy="107" r="6" fill="var(--s2)"><title>R2 +adaptive — AUC 0.7697</title></circle>
+            <circle cx="140" cy="59"  r="6" fill="var(--s3)"><title>R3 +semantic — AUC 0.7835</title></circle>
+            <circle cx="193" cy="34"  r="6" fill="var(--s4)"><title>R4 full — AUC 0.7909</title></circle>
+            <text x="34"  y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R1</text>
+            <text x="87"  y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R2</text>
+            <text x="140" y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R3</text>
+            <text x="193" y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R4</text>
+            <text x="34"  y="178" text-anchor="middle" fill="var(--ink-soft)" font-size="10">.7639</text>
+            <text x="193" y="178" text-anchor="middle" fill="var(--ink)" font-size="10" font-weight="650">.7909</text>
+          </g>
+          <!-- panel 2 AP -->
+          <g transform="translate(265,0)">
+            <text x="0" y="12" fill="var(--ink)" font-size="12" font-weight="650">Average precision</text>
+            <text x="200" y="12" text-anchor="end" fill="var(--confirmed)" font-size="11" font-weight="600">+5.11 pp</text>
+            <line x1="14" y1="20" x2="14" y2="140" stroke="var(--rule)"/>
+            <line x1="14" y1="140" x2="200" y2="140" stroke="var(--rule)"/>
+            <polyline points="34,127 87,92 140,60 193,33" fill="none" stroke="var(--ink-faint)" stroke-width="1.5"/>
+            <circle cx="34"  cy="127" r="6" fill="var(--s1)"><title>R1 — AP 0.3721</title></circle>
+            <circle cx="87"  cy="92"  r="6" fill="var(--s2)"><title>R2 — AP 0.3911</title></circle>
+            <circle cx="140" cy="60"  r="6" fill="var(--s3)"><title>R3 — AP 0.4083</title></circle>
+            <circle cx="193" cy="33"  r="6" fill="var(--s4)"><title>R4 — AP 0.4232</title></circle>
+            <text x="34"  y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R1</text>
+            <text x="87"  y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R2</text>
+            <text x="140" y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R3</text>
+            <text x="193" y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R4</text>
+            <text x="34"  y="178" text-anchor="middle" fill="var(--ink-soft)" font-size="10">.3721</text>
+            <text x="193" y="178" text-anchor="middle" fill="var(--ink)" font-size="10" font-weight="650">.4232</text>
+          </g>
+          <!-- panel 3 F1 -->
+          <g transform="translate(530,0)">
+            <text x="0" y="12" fill="var(--ink)" font-size="12" font-weight="650">F₁-macro</text>
+            <text x="200" y="12" text-anchor="end" fill="var(--null)" font-size="11" font-weight="600">flat · p &gt; 0.3</text>
+            <line x1="14" y1="20" x2="14" y2="140" stroke="var(--rule)"/>
+            <line x1="14" y1="140" x2="200" y2="140" stroke="var(--rule)"/>
+            <polyline points="34,83 87,72 140,110 193,47" fill="none" stroke="var(--ink-faint)" stroke-width="1.5"/>
+            <circle cx="34"  cy="83"  r="6" fill="var(--s1)"><title>R1 — F1 0.5968</title></circle>
+            <circle cx="87"  cy="72"  r="6" fill="var(--s2)"><title>R2 — F1 0.5991</title></circle>
+            <circle cx="140" cy="110" r="6" fill="var(--s3)"><title>R3 — F1 0.5912 (below R1)</title></circle>
+            <circle cx="193" cy="47"  r="6" fill="var(--s4)"><title>R4 — F1 0.6043</title></circle>
+            <text x="34"  y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R1</text>
+            <text x="87"  y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R2</text>
+            <text x="140" y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R3</text>
+            <text x="193" y="158" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">R4</text>
+            <text x="140" y="130" text-anchor="middle" fill="var(--gap)" font-size="10" font-weight="650">dips</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>AUC and AP agree; F₁ does not.</b> Average precision rises more sharply than AUC — the more
+    informative view at 14.5% positives. But F₁-macro at a fixed 0.5 cut is flat in every comparison, and the
+    semantic pillar actually scores <i>below</i> the backbone on it. The paper reports this honestly and rests
+    no claim on it. What it does not do is replace it with any other operating-point metric — which is what
+    four of five reviewers asked for.</figcaption>
+  </figure>
+
+  <h3>The de-confounding — the best thing in the section</h3>
+
+  <div class="prose">
+    <p>This is the part reviewers praised without exception. The original design coupled the pillars at two
+    points, and both couplings turned out to be worse than useless:</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <caption>Measured effect of the two cross-pillar couplings</caption>
+      <thead><tr><th>Coupling</th><th>Intent</th><th class="num">Measured</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>LLM priors initialise the policy</td><td>give the policy a head start</td>
+            <td class="num" style="color:var(--gap);font-weight:650">−0.71 pp</td>
+            <td><span class="chip nul">suppressed it</span></td></tr>
+        <tr><td>LLM scores enter the policy state</td><td>condition filtering on semantics</td>
+            <td class="num" style="color:var(--null);font-weight:650">−0.33 pp</td>
+            <td><span class="chip nul">null · p = 0.44</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Why this matters more than it looks</span>
+    Under the prior initialisation the adaptive pillar measured <b>+0.19 pp, p = 0.10</b> — a null. Removing the
+    coupling revealed <b>+0.58 pp, 20/20 seeds, p = 2.5×10⁻¹¹</b>. The paper nearly reported its own working
+    component as a failure. That finding — <i>hand-designed couplings can suppress the component they were
+    built to help</i> — is transferable to anyone building multi-component systems, and it is arguably the
+    paper's most original contribution.
+  </div>
+
+  <h3>Amazon — the second dataset, added after submission</h3>
+
+  <figure>
+    <p class="fig-title">The adaptive pillar replicates on Amazon</p>
+    <p class="fig-sub">n = 20 held-out seeds, protocol identical to YelpChi. No review text exists on Amazon, so only the adaptive pillar is testable.</p>
+    <div class="figframe">
+      <svg viewBox="0 0 740 150" role="img" aria-label="On Amazon, AUC and AP improve while F1-macro falls">
+        <g font-size="11">
+          <g transform="translate(0,0)">
+            <text x="0" y="14" fill="var(--ink)" font-size="12" font-weight="650">AUC</text>
+            <rect x="0" y="30" width="200" height="26" rx="3" fill="var(--surface-2)"/>
+            <rect x="0" y="30" width="118" height="26" rx="3" fill="var(--base)"/>
+            <rect x="0" y="66" width="200" height="26" rx="3" fill="var(--surface-2)"/>
+            <rect x="0" y="66" width="186" height="26" rx="3" fill="var(--s2)"/>
+            <text x="10" y="48" fill="#fff" font-size="10.5" font-weight="600">.9378</text>
+            <text x="10" y="84" fill="#fff" font-size="10.5" font-weight="600">.9429</text>
+            <text x="0" y="112" fill="var(--confirmed)" font-size="11.5" font-weight="650">+0.51 pp · 19/20</text>
+            <text x="0" y="130" fill="var(--ink-faint)" font-size="10.5">p = 6.4×10⁻⁷</text>
+          </g>
+          <g transform="translate(265,0)">
+            <text x="0" y="14" fill="var(--ink)" font-size="12" font-weight="650">Average precision</text>
+            <rect x="0" y="30" width="200" height="26" rx="3" fill="var(--surface-2)"/>
+            <rect x="0" y="30" width="122" height="26" rx="3" fill="var(--base)"/>
+            <rect x="0" y="66" width="200" height="26" rx="3" fill="var(--surface-2)"/>
+            <rect x="0" y="66" width="178" height="26" rx="3" fill="var(--s2)"/>
+            <text x="10" y="48" fill="#fff" font-size="10.5" font-weight="600">.8505</text>
+            <text x="10" y="84" fill="#fff" font-size="10.5" font-weight="600">.8553</text>
+            <text x="0" y="112" fill="var(--confirmed)" font-size="11.5" font-weight="650">+0.48 pp · 18/20</text>
+            <text x="0" y="130" fill="var(--ink-faint)" font-size="10.5">p = 2.5×10⁻⁵</text>
+          </g>
+          <g transform="translate(530,0)">
+            <text x="0" y="14" fill="var(--ink)" font-size="12" font-weight="650">F₁-macro</text>
+            <rect x="0" y="30" width="200" height="26" rx="3" fill="var(--surface-2)"/>
+            <rect x="0" y="30" width="186" height="26" rx="3" fill="var(--base)"/>
+            <rect x="0" y="66" width="200" height="26" rx="3" fill="var(--surface-2)"/>
+            <rect x="0" y="66" width="154" height="26" rx="3" fill="var(--gap)"/>
+            <text x="10" y="48" fill="#fff" font-size="10.5" font-weight="600">.8942</text>
+            <text x="10" y="84" fill="#fff" font-size="10.5" font-weight="600">.8799</text>
+            <text x="0" y="112" fill="var(--gap)" font-size="11.5" font-weight="650">−1.43 pp · 0/20</text>
+            <text x="0" y="130" fill="var(--ink-faint)" font-size="10.5">p = 7.8×10⁻⁷</text>
+          </g>
+          <g transform="translate(0,0)">
+            <rect x="620" y="30" width="11" height="11" rx="2" fill="var(--base)"/>
+            <text x="637" y="40" fill="var(--ink-soft)" font-size="10.5">base</text>
+            <rect x="620" y="66" width="11" height="11" rx="2" fill="var(--s2)"/>
+            <text x="637" y="76" fill="var(--ink-soft)" font-size="10.5">+ adaptive</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>A genuine replication — on a backbone 17 points stronger and a graph 200× denser.</b> YelpChi
+    gave +0.58 pp; Amazon gives +0.51 pp. The policy also <i>halves</i> seed variance here (±0.0027 → ±0.0011).
+    But F₁-macro moves the other way on every single seed — the same disagreement as YelpChi, only sharper. The
+    ranking improves while the fixed 0.5 operating point degrades, which reads as a calibration shift and has
+    not yet been tested.</figcaption>
+  </figure>
+</section>
+
+<hr class="div">
+
+<!-- ===== 4.3 ===== -->
+<section>
+  <div class="sec-head"><span class="sec-num">4.3</span><h2>Generality I — the chart the paper never draws</h2></div>
+
+  <div class="prose">
+    <p>Section 4.3 adds the six text scores to eight classifiers and shows the signal transfers. That part works:
+    seven of eight improve significantly. But the same table contains a second fact, and the paper never puts it
+    beside the first.</p>
+  </div>
+
+  <figure>
+    <p class="fig-title">Eight backbones, with and without the text signal</p>
+    <p class="fig-sub">Identical YelpChi 25/15/60 split. Sorted by base AUC. The dashed line is the full three-pillar framework.</p>
+    <div class="figframe">
+      <svg viewBox="0 0 740 330" role="img" aria-label="Dumbbell chart of eight backbones with and without text6, with the framework marked well below most of them">
+        <g font-size="11">
+          <!-- grid -->
+          <g stroke="var(--rule)" stroke-width="1">
+            <line x1="166" y1="24" x2="166" y2="286"/><line x1="298" y1="24" x2="298" y2="286"/>
+            <line x1="430" y1="24" x2="430" y2="286"/><line x1="562" y1="24" x2="562" y2="286"/>
+            <line x1="694" y1="24" x2="694" y2="286"/>
+          </g>
+          <g fill="var(--ink-faint)" font-size="10.5" text-anchor="middle">
+            <text x="166" y="302">0.76</text><text x="298" y="302">0.80</text><text x="430" y="302">0.84</text>
+            <text x="562" y="302">0.88</text><text x="694" y="302">0.92</text>
+          </g>
+          <text x="430" y="322" text-anchor="middle" fill="var(--ink-faint)" font-size="11">test AUC</text>
+
+          <!-- framework reference -->
+          <line x1="268" y1="18" x2="268" y2="286" stroke="var(--s4)" stroke-width="2" stroke-dasharray="6 4"/>
+          <text x="274" y="16" fill="var(--s4)" font-size="11" font-weight="650">full framework 0.7909</text>
+
+          <!-- rows -->
+          <g>
+            <!-- CARE-GNN -->
+            <text x="142" y="44" text-anchor="end" fill="var(--ink)" font-size="11.5">CARE-GNN</text>
+            <line x1="182" y1="40" x2="238" y2="40" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="182" cy="40" r="5.5" fill="var(--base)"><title>CARE-GNN base — 0.7648</title></circle>
+            <circle cx="238" cy="40" r="5.5" fill="var(--s3)"><title>CARE-GNN + text6 — 0.7817 (+1.69 pp)</title></circle>
+            <text x="252" y="44" fill="var(--ink-faint)" font-size="10">+1.69</text>
+            <!-- LR -->
+            <text x="142" y="76" text-anchor="end" fill="var(--ink)" font-size="11.5">Logistic regression</text>
+            <line x1="197" y1="72" x2="273" y2="72" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="197" cy="72" r="5.5" fill="var(--base)"><title>Logistic regression base — 0.7694</title></circle>
+            <circle cx="273" cy="72" r="5.5" fill="var(--s3)"><title>Logistic regression + text6 — 0.7923 (+2.29 pp)</title></circle>
+            <text x="287" y="76" fill="var(--gap)" font-size="10" font-weight="650">+2.29 ▸ beats the framework</text>
+            <!-- MLP -->
+            <text x="142" y="108" text-anchor="end" fill="var(--ink)" font-size="11.5">MLP (64,64)</text>
+            <line x1="366" y1="104" x2="391" y2="104" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="366" cy="104" r="5.5" fill="var(--base)"><title>MLP base — 0.8205</title></circle>
+            <circle cx="391" cy="104" r="5.5" fill="var(--s3)"><title>MLP + text6 — 0.8283 (+0.78 pp, n.s.)</title></circle>
+            <text x="405" y="108" fill="var(--ink-faint)" font-size="10">+0.78 n.s.</text>
+            <!-- BWGNN-Homo -->
+            <text x="142" y="140" text-anchor="end" fill="var(--ink)" font-size="11.5">BWGNN-Homo</text>
+            <line x1="381" y1="136" x2="436" y2="136" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="381" cy="136" r="5.5" fill="var(--base)"><title>BWGNN-Homo base — 0.8252</title></circle>
+            <circle cx="436" cy="136" r="5.5" fill="var(--s3)"><title>BWGNN-Homo + text6 — 0.8417 (+1.66 pp)</title></circle>
+            <text x="450" y="140" fill="var(--ink-faint)" font-size="10">+1.66</text>
+            <!-- XGBoost -->
+            <text x="142" y="172" text-anchor="end" fill="var(--ink)" font-size="11.5">XGBoost</text>
+            <line x1="476" y1="168" x2="556" y2="168" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="476" cy="168" r="5.5" fill="var(--base)"><title>XGBoost base — 0.8541</title></circle>
+            <circle cx="556" cy="168" r="5.5" fill="var(--s3)"><title>XGBoost + text6 — 0.8783 (+2.42 pp)</title></circle>
+            <text x="570" y="172" fill="var(--ink-faint)" font-size="10">+2.42</text>
+            <!-- HistGBM -->
+            <text x="142" y="204" text-anchor="end" fill="var(--ink)" font-size="11.5">HistGBM</text>
+            <line x1="502" y1="200" x2="541" y2="200" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="502" cy="200" r="5.5" fill="var(--base)"><title>HistGBM base — 0.8620</title></circle>
+            <circle cx="541" cy="200" r="5.5" fill="var(--s3)"><title>HistGBM + text6 — 0.8738 (+1.18 pp)</title></circle>
+            <text x="555" y="204" fill="var(--ink-faint)" font-size="10">+1.18</text>
+            <!-- BWGNN-Hetero -->
+            <text x="142" y="236" text-anchor="end" fill="var(--ink)" font-size="11.5">BWGNN-Hetero</text>
+            <line x1="588" y1="232" x2="608" y2="232" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="588" cy="232" r="5.5" fill="var(--base)"><title>BWGNN-Hetero base — 0.8879</title></circle>
+            <circle cx="608" cy="232" r="5.5" fill="var(--s3)"><title>BWGNN-Hetero + text6 — 0.8941 (+0.62 pp)</title></circle>
+            <text x="622" y="236" fill="var(--ink-faint)" font-size="10">+0.62</text>
+            <!-- XGB-Graph -->
+            <text x="142" y="268" text-anchor="end" fill="var(--ink)" font-size="11.5" font-weight="650">XGB-Graph (2-hop)</text>
+            <line x1="663" y1="264" x2="686" y2="264" stroke="var(--rule)" stroke-width="3"/>
+            <circle cx="663" cy="264" r="5.5" fill="var(--base)"><title>XGB-Graph base — 0.9106</title></circle>
+            <circle cx="686" cy="264" r="6.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="2"><title>XGB-Graph + text6 — 0.9177, the strongest result in the paper</title></circle>
+            <text x="700" y="268" fill="var(--ink)" font-size="10" font-weight="650">.9177</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Four of five reviewers led with this, and two rated it Critical.</b> The full framework
+    (dashed) sits below six of the eight base models and below seven of the eight improved ones — including
+    logistic regression with the same six scores concatenated. Tables 1 and 2 are on facing pages in the
+    submitted paper and are never compared. The practitioner reviewer's reading: <i>"build the tree on two-hop
+    features plus six text scores, skip the GNN, skip the RL policy, skip the LLM."</i></figcaption>
+  </figure>
+
+  <div class="legend" style="margin-top:-1rem">
+    <span class="lg"><span class="sw" style="background:var(--base)"></span>backbone alone</span>
+    <span class="lg"><span class="sw" style="background:var(--s3)"></span>+ the six text scores</span>
+    <span class="lg"><span class="sw" style="background:var(--s4)"></span>the full framework</span>
+  </div>
+
+  <div class="note">
+    <span class="lbl">Why this is survivable — and why it is the whole reframe</span>
+    A detector that loses to XGB-Graph is in trouble. A <b>wrapper</b> is not: its claim is
+    <i>base vs. base + wrapper</i>, so a stronger model existing elsewhere is beside the point. That is exactly
+    why the paper is being restructured around §4.4. The chart above stops being an embarrassment and becomes
+    the scope boundary — <i>the semantic half travels even to hosts the wrapper cannot attach to.</i>
+  </div>
+
+  <h3>Does the signal need a language model?</h3>
+
+  <div class="prose">
+    <p>The paper runs the experiment that could delete its own headline component — and reports the answer.</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <caption>Haiku-scored minus heuristic-scored text6 (same split, same protocol)</caption>
+      <thead><tr><th>Backbone</th><th class="num">Δ (pp)</th><th>Significant?</th></tr></thead>
+      <tbody>
+        <tr><td>Logistic regression</td><td class="num">+0.42</td><td><span class="chip ok">yes</span></td></tr>
+        <tr><td>HistGBM</td><td class="num">+0.72</td><td><span class="chip ok">yes</span></td></tr>
+        <tr><td>XGBoost</td><td class="num">+0.55</td><td><span class="chip ok">yes</span></td></tr>
+        <tr><td>MLP (64,64)</td><td class="num">+0.47</td><td><span class="chip nul">no</span></td></tr>
+        <tr><td><b>CARE-GNN</b> — the paper's own host</td><td class="num">+0.15</td><td><span class="chip nul">no</span></td></tr>
+        <tr><td>BWGNN-Hetero</td><td class="num">+0.14</td><td><span class="chip nul">no</span></td></tr>
+        <tr><td>BWGNN-Homo</td><td class="num">+0.70</td><td><span class="chip nul">no</span></td></tr>
+        <tr><td>GraphConsis</td><td class="num">+1.22</td><td><span class="chip nul">no</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>On <strong>every graph backbone</strong>, a free deterministic scorer is statistically indistinguishable
+    from Claude Haiku. The LLM's edge survives only on simple feature-only classifiers, where no graph
+    aggregation smooths it away. Reviewers called this the most intellectually honest experiment in the
+    paper — and the Domain seat believes it is the first systematic LLM-versus-heuristic head-to-head in
+    graph fraud detection.</p>
+  </div>
+
+  <div class="aside">
+    <span class="lbl">The alternative explanation nobody addressed</span>
+    <p>YelpChi's labels are <b>Yelp's own filter output</b>, not adjudicated ground truth. If that filter keys
+    partly on linguistic-style regularities, then text6 may be recovering <i>the labelling system's own
+    heuristics</i> — which would explain why a crude heuristic matches a language model without any appeal to
+    "where semantic value lives." It is testable and untested, and the paper presents the flattering reading
+    as the only one.</p>
+  </div>
+
+  <h3>The dose–response, and why all five seats objected</h3>
+
+  <div class="prose">
+    <p>The paper fits a trend — gain declines ~1.3 pp per +0.1 of backbone AUC — and uses it twice as
+    interpretation, including to explain away the Amazon null. Three independent problems:</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Problem</th><th>Why it breaks the fit</th></tr></thead>
+      <tbody>
+        <tr><td><b>Shared term on both axes</b></td>
+            <td>Δ = AUC(with) − AUC(without) is regressed on AUC(without). The same noisy quantity appears on both axes with opposite signs, which produces a negative slope <i>under the null of no relationship</i>.</td></tr>
+        <tr><td><b>Ceiling effect</b></td>
+            <td>There is less headroom above 0.91 than above 0.77, pushing the slope negative independently.</td></tr>
+        <tr><td><b>Nine points, not eight</b></td>
+            <td>§4.3 says eight classifiers; the figure plots nine. The ninth is GraphConsis — from a different experiment, non-significant, largest residual, ~10× the seed std. No slope CI, R², or n is reported.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="div">
+
+<!-- ===== 4.4 ===== -->
+<section>
+  <div class="sec-head"><span class="sec-num">4.4</span><h2>Generality II — the section that becomes the paper</h2></div>
+
+  <div class="prose">
+    <p>Here the whole framework is detached from CARE-GNN and bolted onto GraphConsis, changing only two things:
+    the policy state and the actuation point. Under the reframe, this is no longer a closing check — it is the
+    main result.</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <caption>GraphConsis as a second host · 5 seeds · frozen split</caption>
+      <thead><tr><th>Configuration</th><th class="num">AUC</th><th class="num">Δ</th><th class="num">p</th></tr></thead>
+      <tbody>
+        <tr><td>GraphConsis standalone</td><td class="num">0.7840 ± .0357</td><td class="num">—</td><td class="num">—</td></tr>
+        <tr><td>+ adaptive pillar</td><td class="num">0.7960 ± .0207</td><td class="num">+1.20</td><td class="num">0.63</td></tr>
+        <tr><td>+ semantic pillar</td><td class="num"><b>0.8256 ± .0100</b></td><td class="num">+4.16</td><td class="num">0.07</td></tr>
+        <tr><td>+ full framework</td><td class="num">0.8110 ± .0537</td><td class="num">+2.71</td><td class="num">0.38</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose">
+    <p>Two things to read off this table. The wrapper <em>does</em> improve the base in every configuration —
+    which is the claim. But <strong>nothing reaches significance</strong>, and the full framework (0.8110) lands
+    <em>below</em> the semantic pillar alone (0.8256): on this host, adding the policy made things worse.</p>
+
+    <p>The encouraging detail is that this looks like a <strong>power problem, not a null</strong>. The standalone
+    has enormous seed variance (±0.0357) while the +text6 configuration is tight (±0.0100) — the largest text6
+    effect anywhere in the paper fails significance because the <em>baseline</em> is noisy. Twenty seeds instead
+    of five should resolve it. That run is the single job that decides whether the wrapper claim has one host
+    or two.</p>
+  </div>
+
+  <div class="aside">
+    <span class="lbl">Two reporting problems in this section</span>
+    <p><b>Asymmetric hedging.</b> §4.4 calls +4.16 pp at p = 0.07 "the decisive component" while calling
+    +1.20 pp at p = 0.63 a failure — same host, same seeds, same split. Three seats flagged it.</p>
+    <p><b>Mismatched confirmation.</b> The 30-seed test that is supposed to adjudicate the +1.20 pp estimate
+    used a <i>different reward function</i>. Two experiments on two different systems cannot confirm or
+    disconfirm each other.</p>
+    <p><b>Validation asymmetry.</b> BWGNN was validated by <i>matching</i> published numbers — the right
+    standard. GraphConsis is validated by <i>exceeding</i> published reproductions by 13–21 pp, with no
+    diagnosis. XGB-Graph, which carries the abstract's strongest claim, is never reference-checked at all.</p>
+  </div>
+</section>
+
+<hr class="div">
+
+<!-- ===== closing ===== -->
+<section>
+  <div class="sec-head"><span class="sec-num">★</span><h2>What Section 4 establishes</h2></div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Claim</th><th>Evidence</th><th>Standing</th></tr></thead>
+      <tbody>
+        <tr><td>The semantic pillar improves the backbone</td><td>+1.97 pp, 20/20 seeds</td><td><span class="chip ok">solid</span></td></tr>
+        <tr><td>The adaptive pillar improves the backbone</td><td>+0.58 pp Yelp, +0.51 pp Amazon</td><td><span class="chip ok">solid · two datasets</span></td></tr>
+        <tr><td>The text signal transfers across model families</td><td>7 of 8 backbones significant</td><td><span class="chip ok">solid</span></td></tr>
+        <tr><td>The LLM is replaceable by a free heuristic</td><td>n.s. on all four graph backbones</td><td><span class="chip ok">solid</span></td></tr>
+        <tr><td>The framework transfers to a second backbone</td><td>GraphConsis, all comparisons n.s. at n=5</td><td><span class="chip nul">underpowered</span></td></tr>
+        <tr><td>These effects hold on data the model has not seen</td><td>one frozen split throughout</td><td><span class="chip gapc">not established</span></td></tr>
+        <tr><td>The gains reach a usable operating point</td><td>F₁ flat on Yelp, negative on Amazon</td><td><span class="chip gapc">not established</span></td></tr>
+        <tr><td>Unification is necessary</td><td>interaction +0.16 pp vs 0.43 pp noise</td><td><span class="chip gapc">refuted by own data</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="margin-top:2rem">
+    <p>Read down that column and the shape of the revision is obvious. The first four rows are real results that
+    nobody on the panel disputed. The last three are claims the paper makes that Section 4 does not support —
+    and two of them are fixable with runs already scoped, while the third is fixable by deleting one word.</p>
+  </div>
+</section>
+
+</div>

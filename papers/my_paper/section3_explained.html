@@ -1,0 +1,919 @@
+<title>Section 3, Explained — The Three-Pillar Framework</title>
+
+<style>
+  :root {
+    --ground:      #F6F7F9;
+    --surface:     #FFFFFF;
+    --surface-2:   #EDF0F4;
+    --ink:         #171C24;
+    --ink-soft:    #4A5464;
+    --ink-faint:   #7B8696;
+    --rule:        #D9DEE6;
+
+    --structural:  #1F6FB2;
+    --adaptive:    #D4760F;
+    --semantic:    #2A8742;
+    --deep:        #2B3A55;
+
+    --confirmed:   #0E7C7B;
+    --null:        #9A6A08;
+    --gap:         #B03A3A;
+
+    --tint-struct: #E8F1F9;
+    --tint-adapt:  #FBF0E2;
+    --tint-sem:    #E7F3EA;
+
+    --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+    --step--1: clamp(0.80rem, 0.78rem + 0.1vw, 0.86rem);
+    --step-0:  clamp(1.00rem, 0.97rem + 0.15vw, 1.08rem);
+    --step-1:  clamp(1.20rem, 1.12rem + 0.4vw, 1.40rem);
+    --step-2:  clamp(1.50rem, 1.35rem + 0.7vw, 1.90rem);
+    --step-3:  clamp(1.95rem, 1.70rem + 1.2vw, 2.70rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:      #10141A;
+      --surface:     #171C24;
+      --surface-2:   #1E242E;
+      --ink:         #E6EAF0;
+      --ink-soft:    #A8B2C0;
+      --ink-faint:   #76818F;
+      --rule:        #2A323E;
+
+      --structural:  #5AA7E0;
+      --adaptive:    #E89B3F;
+      --semantic:    #5CBB73;
+      --deep:        #A9BBD8;
+
+      --confirmed:   #43B5B3;
+      --null:        #D4A338;
+      --gap:         #E07878;
+
+      --tint-struct: #16222E;
+      --tint-adapt:  #2A2114;
+      --tint-sem:    #152417;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:#10141A; --surface:#171C24; --surface-2:#1E242E;
+    --ink:#E6EAF0; --ink-soft:#A8B2C0; --ink-faint:#76818F; --rule:#2A323E;
+    --structural:#5AA7E0; --adaptive:#E89B3F; --semantic:#5CBB73; --deep:#A9BBD8;
+    --confirmed:#43B5B3; --null:#D4A338; --gap:#E07878;
+    --tint-struct:#16222E; --tint-adapt:#2A2114; --tint-sem:#152417;
+  }
+  :root[data-theme="light"] {
+    --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EDF0F4;
+    --ink:#171C24; --ink-soft:#4A5464; --ink-faint:#7B8696; --rule:#D9DEE6;
+    --structural:#1F6FB2; --adaptive:#D4760F; --semantic:#2A8742; --deep:#2B3A55;
+    --confirmed:#0E7C7B; --null:#9A6A08; --gap:#B03A3A;
+    --tint-struct:#E8F1F9; --tint-adapt:#FBF0E2; --tint-sem:#E7F3EA;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--step-0);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 61rem; margin: 0 auto; padding: 0 1.5rem 6rem; }
+  .prose { max-width: 36rem; }
+
+  /* ---- masthead ---- */
+  header.masthead {
+    padding: 4rem 0 2.5rem;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 3rem;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: var(--step--1);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 1rem;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-size: var(--step-3);
+    line-height: 1.08;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    margin: 0 0 1.25rem;
+  }
+  .standfirst {
+    font-family: var(--serif);
+    font-size: var(--step-1);
+    line-height: 1.5;
+    color: var(--ink-soft);
+    max-width: 38rem;
+    margin: 0;
+  }
+
+  /* ---- pillar legend ---- */
+  .legend { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 2rem; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    font-family: var(--mono); font-size: var(--step--1);
+    padding: 0.3rem 0.7rem; border-radius: 2px;
+    border: 1px solid var(--rule); background: var(--surface);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+
+  /* ---- sections ---- */
+  section { margin: 4.5rem 0 0; scroll-margin-top: 2rem; }
+  .sec-head { display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.5rem; }
+  .sec-num {
+    font-family: var(--mono); font-size: var(--step--1);
+    color: var(--ink-faint); letter-spacing: 0.08em; flex: none;
+    padding-top: 0.35rem;
+  }
+  h2 {
+    font-family: var(--serif); font-size: var(--step-2); font-weight: 600;
+    letter-spacing: -0.01em; line-height: 1.15; margin: 0; text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--sans); font-size: var(--step-0); font-weight: 650;
+    letter-spacing: 0.01em; margin: 2.25rem 0 0.6rem;
+  }
+  p { margin: 0 0 1.1rem; }
+  .prose p:last-child { margin-bottom: 0; }
+
+  strong { font-weight: 650; }
+  em.term { font-style: normal; font-weight: 600; color: var(--deep); }
+
+  /* ---- equation card ---- */
+  .eq-card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-top: 3px solid var(--accent, var(--deep));
+    border-radius: 3px;
+    margin: 2rem 0;
+    overflow: hidden;
+  }
+  .eq-card.struct { --accent: var(--structural); }
+  .eq-card.adapt  { --accent: var(--adaptive); }
+  .eq-card.sem    { --accent: var(--semantic); }
+
+  .eq-label {
+    display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    padding: 0.7rem 1.25rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface-2);
+    font-family: var(--mono); font-size: var(--step--1);
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint);
+  }
+  .eq-label .nm { color: var(--accent, var(--deep)); font-weight: 600; }
+
+  .eq-display {
+    padding: 2rem 1.25rem;
+    text-align: center;
+    overflow-x: auto;
+    font-size: clamp(1.05rem, 0.95rem + 0.5vw, 1.35rem);
+  }
+  .eq-body { padding: 0 1.25rem 1.5rem; }
+
+  /* math typesetting */
+  .m { font-family: var(--serif); white-space: nowrap; }
+  .m i { font-style: italic; padding-right: 0.03em; }
+  .m .op { font-style: normal; padding: 0 0.3em; color: var(--ink-soft); }
+  .m .fn { font-style: normal; font-family: var(--sans); font-size: 0.86em; letter-spacing: 0.01em; }
+  .m sub { font-size: 0.68em; font-style: italic; }
+  .m sup { font-size: 0.68em; }
+  .m .br { font-style: normal; color: var(--ink-faint); padding: 0 0.1em; }
+  .m .hi { background: var(--hl, var(--surface-2)); border-radius: 2px; padding: 0.1em 0.2em; }
+
+  /* term breakdown */
+  .terms { display: grid; gap: 0.5rem; margin: 0 0 1.25rem; }
+  @media (min-width: 40rem) { .terms.two { grid-template-columns: 1fr 1fr; } }
+  .term {
+    display: grid; grid-template-columns: minmax(3.6rem, auto) 1fr; gap: 0.9rem;
+    align-items: baseline;
+    padding: 0.55rem 0.7rem;
+    background: var(--surface-2); border-radius: 2px;
+    font-size: var(--step--1); line-height: 1.5;
+  }
+  .term .sym { font-family: var(--serif); font-style: italic; font-size: 1.05rem; color: var(--accent, var(--deep)); text-align: right; }
+  .term .def { color: var(--ink-soft); }
+  .term .def b { color: var(--ink); font-weight: 600; }
+
+  .inwords {
+    border-left: 3px solid var(--accent, var(--deep));
+    padding: 0.1rem 0 0.1rem 1rem;
+    margin: 0 0 1.25rem;
+    font-family: var(--serif); font-size: var(--step-0); line-height: 1.6;
+    color: var(--ink);
+  }
+  .inwords .lbl {
+    display: block; font-family: var(--mono); font-size: 0.72rem;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint);
+    margin-bottom: 0.3rem;
+  }
+
+  /* status chips */
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 2px;
+    border: 1px solid currentColor; white-space: nowrap;
+  }
+  .chip.ok   { color: var(--confirmed); }
+  .chip.nul  { color: var(--null); }
+  .chip.gapc { color: var(--gap); }
+
+  /* reviewer aside */
+  .aside {
+    border: 1px dashed var(--rule);
+    border-left: 3px solid var(--gap);
+    background: var(--surface);
+    padding: 1rem 1.15rem;
+    margin: 1.5rem 0;
+    font-size: var(--step--1);
+    line-height: 1.6;
+  }
+  .aside .lbl {
+    display: block; font-family: var(--mono); font-size: 0.72rem;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--gap);
+    margin-bottom: 0.45rem; font-weight: 600;
+  }
+  .aside p { margin: 0 0 0.7rem; color: var(--ink-soft); }
+  .aside p:last-child { margin: 0; }
+  .aside b { color: var(--ink); font-weight: 600; }
+
+  /* figures */
+  figure { margin: 2.25rem 0; }
+  figure svg { display: block; width: 100%; height: auto; }
+  .figframe {
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 3px; padding: 1.5rem 1.25rem; overflow-x: auto;
+  }
+  figcaption {
+    font-size: var(--step--1); color: var(--ink-soft); line-height: 1.55;
+    margin-top: 0.85rem; max-width: 40rem;
+  }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  /* data table */
+  .tbl-wrap { overflow-x: auto; margin: 1.5rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: var(--step--1); font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 0.55rem 0.8rem; border-bottom: 1px solid var(--rule); }
+  th { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); font-weight: 500; }
+  td.num { text-align: right; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--surface-2); padding: 0.1em 0.35em; border-radius: 2px; }
+
+  hr.div { border: none; border-top: 1px solid var(--rule); margin: 3.5rem 0 0; }
+
+  a { color: var(--structural); }
+  :focus-visible { outline: 2px solid var(--adaptive); outline-offset: 3px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .eq-card { transition: border-color 160ms ease; }
+  }
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Paper walkthrough · Section 3 of 5</p>
+  <h1>The Three-Pillar Framework, equation by equation</h1>
+  <p class="standfirst">What each of the eight equations does, why it is there, and — where it has been
+  measured — whether it earns its place. Annotations from the five-seat review panel are marked separately
+  from what the paper claims.</p>
+
+  <div class="legend">
+    <span class="pill"><span class="dot" style="background:var(--structural)"></span>Structural · the GNN backbone</span>
+    <span class="pill"><span class="dot" style="background:var(--adaptive)"></span>Adaptive · CAPN</span>
+    <span class="pill"><span class="dot" style="background:var(--semantic)"></span>Semantic · the LLM signal</span>
+  </div>
+</header>
+
+<!-- ============ 3.1 ============ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">3.1</span>
+    <h2>Problem setup — and the one thing that makes it hard</h2>
+  </div>
+
+  <div class="prose">
+    <p>You model the review platform as a <em class="term">multi-relation graph</em>. Each node is a review
+    carrying 32 hand-crafted behavioural features. Each <em class="term">relation</em> is a different reason two
+    reviews might be connected — and on YelpChi there are three of them:</p>
+  </div>
+
+  <div class="terms two" style="--accent: var(--structural); max-width: 46rem;">
+    <div class="term"><span class="sym">R‑U‑R</span><span class="def">posted by the <b>same user</b></span></div>
+    <div class="term"><span class="sym">R‑T‑R</span><span class="def">same <b>product and star rating</b></span></div>
+    <div class="term"><span class="sym">R‑S‑R</span><span class="def">same <b>product within one month</b></span></div>
+    <div class="term"><span class="sym">N<sub>r</sub>(v)</span><span class="def">the neighbours of node <b>v</b> under relation <b>r</b></span></div>
+  </div>
+
+  <div class="prose">
+    <p>The task is node-level: decide whether review <span class="m"><i>v</i></span> is fraudulent.
+    45,954 reviews, 14.5% of them fraud.</p>
+
+    <p><strong>The difficulty is camouflage.</strong> A fraudster deliberately wires themselves to honest
+    accounts. So when the network averages over a fraudster's neighbours, it averages in a crowd of innocents
+    — and the fraud signal disappears into the mean. Every equation that follows is, in one way or another,
+    an answer to that.</p>
+  </div>
+
+  <figure>
+    <div class="figframe">
+      <svg viewBox="0 0 760 240" role="img" aria-label="A fraudulent node connected mostly to benign neighbours, so a plain average washes out its signal">
+        <defs>
+          <marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-faint)"/>
+          </marker>
+        </defs>
+        <g font-family="var(--sans)" font-size="12">
+          <!-- neighbours -->
+          <g fill="var(--tint-struct)" stroke="var(--structural)" stroke-width="1.5">
+            <circle cx="70"  cy="50"  r="20"/><circle cx="70"  cy="120" r="20"/>
+            <circle cx="70"  cy="190" r="20"/><circle cx="175" cy="40"  r="20"/>
+            <circle cx="175" cy="200" r="20"/>
+          </g>
+          <circle cx="175" cy="120" r="20" fill="#F3D8D8" stroke="var(--gap)" stroke-width="1.5"/>
+          <!-- edges -->
+          <g stroke="var(--rule)" stroke-width="1.5">
+            <line x1="90" y1="55"  x2="265" y2="115"/><line x1="90" y1="120" x2="265" y2="120"/>
+            <line x1="90" y1="185" x2="265" y2="125"/><line x1="195" y1="45" x2="265" y2="112"/>
+            <line x1="195" y1="195" x2="265" y2="128"/><line x1="195" y1="120" x2="265" y2="120"/>
+          </g>
+          <!-- center -->
+          <circle cx="290" cy="120" r="26" fill="#EBC4C4" stroke="var(--gap)" stroke-width="2.5"/>
+          <text x="290" y="125" text-anchor="middle" fill="var(--ink)" font-weight="600">v</text>
+
+          <text x="70"  y="222" text-anchor="middle" fill="var(--ink-faint)" font-size="11">benign ×5</text>
+          <text x="290" y="168" text-anchor="middle" fill="var(--gap)" font-size="11" font-weight="600">fraud</text>
+
+          <!-- arrow -->
+          <line x1="335" y1="120" x2="400" y2="120" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#ar)"/>
+          <text x="367" y="108" text-anchor="middle" fill="var(--ink-faint)" font-size="11">average</text>
+
+          <!-- result bar -->
+          <rect x="420" y="80" width="300" height="80" rx="3" fill="var(--surface-2)" stroke="var(--rule)"/>
+          <rect x="420" y="80" width="50" height="80" rx="3" fill="#EBC4C4"/>
+          <text x="445" y="175" text-anchor="middle" fill="var(--gap)" font-size="11">1 / 6</text>
+          <text x="595" y="125" text-anchor="middle" fill="var(--ink-soft)" font-size="12.5">signal diluted to noise</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Relation camouflage.</b> The fraudulent node is real, but five of its six neighbours are
+    honest. Plain neighbourhood aggregation returns something that looks almost entirely benign. The backbone's
+    job is to decide <i>which neighbours to listen to</i> before averaging.</figcaption>
+  </figure>
+</section>
+
+<hr class="div">
+
+<!-- ============ 3.2 ============ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">3.2</span>
+    <h2>The structural pillar — ranking neighbours by predicted guilt</h2>
+  </div>
+
+  <div class="prose">
+    <p>The backbone is CARE-GNN. Its central trick is that it does <strong>not</strong> compare neighbours by
+    their raw features — because faking raw features is exactly what camouflage <em>is</em>. Instead a small
+    label predictor assigns every node a fraud probability, and neighbours are ranked by how close their
+    probability is to yours.</p>
+  </div>
+
+  <div class="eq-card struct">
+    <div class="eq-label"><span class="nm">Equation 1</span><span>Label-aware distance</span></div>
+    <div class="eq-display">
+      <span class="m">
+        <i>D</i><sub>r</sub><span class="br">(</span><i>v</i>,<i>u</i><span class="br">)</span>
+        <span class="op">=</span>
+        <span class="br">|</span> <i>p̂</i><sub>v</sub><span class="br">[</span>1<span class="br">]</span>
+        <span class="op">−</span> <i>p̂</i><sub>u</sub><span class="br">[</span>1<span class="br">]</span> <span class="br">|</span>
+      </span>
+    </div>
+    <div class="eq-body">
+      <div class="terms two">
+        <div class="term"><span class="sym">p̂<sub>v</sub></span><span class="def"><b>softmax(MLP(x<sub>v</sub>))</b> — a small network's guess at how likely <i>v</i> is fraud</span></div>
+        <div class="term"><span class="sym">p̂[1]</span><span class="def">the <b>fraud-class</b> probability specifically</span></div>
+        <div class="term"><span class="sym">D<sub>r</sub></span><span class="def">how <b>far apart</b> two nodes are in predicted guilt</span></div>
+        <div class="term"><span class="sym">u</span><span class="def">a candidate neighbour drawn from <b>N<sub>r</sub>(v)</b></span></div>
+      </div>
+      <p class="inwords"><span class="lbl">In words</span>
+      Two reviews count as "close" when a classifier judges them equally suspicious — not when they
+      happen to share surface features. That is precisely the comparison camouflage is designed to defeat,
+      which is why the distance is defined on the <i>prediction</i> rather than the input.</p>
+    </div>
+  </div>
+
+  <div class="prose">
+    <p>Within each relation the closest neighbours are kept, aggregated into a per-relation summary
+    <span class="m"><i>h</i><sup>r</sup><sub>v</sub></span>, and then the three relations are fused:</p>
+  </div>
+
+  <div class="eq-card struct">
+    <div class="eq-label"><span class="nm">Equation 2</span><span>Inter-relation fusion</span></div>
+    <div class="eq-display">
+      <span class="m">
+        <i>h</i><sub>v</sub> <span class="op">=</span> σ
+        <span class="br">(</span> <i>W</i> <span class="br">[</span> <i>x</i><sub>v</sub>
+        <span class="op">‖</span>
+        <span class="hi" style="--hl: var(--tint-adapt)">Σ<sub>r</sub> <i>ω</i><sub>r</sub></span>
+        <i>h</i><sup>r</sup><sub>v</sub> <span class="br">]</span> <span class="br">)</span>
+      </span>
+    </div>
+    <div class="eq-body">
+      <div class="terms two">
+        <div class="term"><span class="sym">x<sub>v</sub> ‖ …</span><span class="def"><b>concatenate</b> the node's own features with its neighbourhood summary</span></div>
+        <div class="term"><span class="sym">ω<sub>r</sub></span><span class="def">how much relation <i>r</i> is <b>trusted</b> in the mix</span></div>
+        <div class="term"><span class="sym">W, σ</span><span class="def">a learned linear map and a nonlinearity</span></div>
+        <div class="term"><span class="sym">h<sub>v</sub></span><span class="def">the final embedding, fed to the classifier</span></div>
+      </div>
+      <p class="inwords"><span class="lbl">In words</span>
+      Keep your own features, add a weighted blend of what each relation told you, squash it. The node keeps
+      a direct line to its own evidence so a hostile neighbourhood cannot completely overwrite it.</p>
+      <p style="margin:0; font-size:var(--step--1); color:var(--ink-soft)">
+      <span class="chip gapc">the hinge</span> &nbsp;In stock CARE-GNN, both <i>how many</i> neighbours to keep
+      <strong>and</strong> the weights <span class="m"><i>ω</i><sub>r</sub></span> come from a heuristic bandit —
+      one global number per relation, the same for all 45,954 nodes. Replacing that bandit is the entire job of
+      the second pillar.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="div">
+
+<!-- ============ 3.3 ============ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">3.3</span>
+    <h2>The adaptive pillar — a policy that sets a threshold per node</h2>
+  </div>
+
+  <div class="prose">
+    <p>CAPN replaces that one global number with a learned policy that outputs a threshold for
+    <em>every node, in every relation</em>. It needs three things: a description of the node's situation
+    (the state), a way to turn that into a threshold (the policy), and a way to learn from the result
+    (the reward).</p>
+  </div>
+
+  <h3>The state — what the policy gets to see</h3>
+
+  <div class="eq-card adapt">
+    <div class="eq-label"><span class="nm">Equation 3</span><span>State vector</span></div>
+    <div class="eq-display">
+      <span class="m">
+        <i>s</i><sub>v,r</sub> <span class="op">=</span> <span class="br">[</span>
+        <i>x</i><sub>v</sub> <span class="op">‖</span> <i>c</i><sub>v</sub> <span class="op">‖</span>
+        <span class="fn">deg</span><sub>v</sub> <span class="op">‖</span> <i>d̄</i><sub>v,r</sub> <span class="op">‖</span>
+        <i>j</i><sub>v,r</sub> <span class="op">‖</span> <i>ν</i><sub>v,r</sub> <span class="op">‖</span>
+        <span class="hi" style="--hl: var(--tint-sem)"><i>z</i><sub>v</sub></span>
+        <span class="br">]</span>
+      </span>
+    </div>
+    <div class="eq-body">
+      <div class="terms">
+        <div class="term"><span class="sym">x<sub>v</sub></span><span class="def">the node's own 32 features — <b>detached</b>, so policy gradients shape the policy and never leak back into the embedding table</span></div>
+        <div class="term"><span class="sym">c<sub>v</sub></span><span class="def"><b>confidence</b>, <span class="m">1 − H(<i>p̂</i><sub>v</sub>)/log 2</span>. Entropy, flipped and normalised: <b>0</b> = the predictor is torn, <b>1</b> = it is certain</span></div>
+        <div class="term"><span class="sym">deg<sub>v</sub></span><span class="def">normalised <b>degree</b> — how busy this neighbourhood is</span></div>
+        <div class="term"><span class="sym">d̄<sub>v,r</sub></span><span class="def">mean label-aware distance (Eq. 1) to its neighbours — <b>how suspicious the company it keeps</b></span></div>
+        <div class="term"><span class="sym">j<sub>v,r</sub></span><span class="def"><b>Jaccard overlap</b> between this relation's neighbourhood and the homogeneous one — does this relation tell you something the others don't?</span></div>
+        <div class="term"><span class="sym">ν<sub>v,r</sub></span><span class="def">neighbour feature <b>variance</b> — a uniform neighbourhood and a scattered one deserve different treatment</span></div>
+        <div class="term"><span class="sym">z<sub>v</sub></span><span class="def">the <b>LLM risk scores</b>, when the semantic pillar is switched on. This is door one of three-pillar integration</span></div>
+      </div>
+      <p class="inwords"><span class="lbl">In words</span>
+      Before deciding anything, give the policy a compact read on this node's local situation: who it is, how
+      sure the classifier is about it, how connected it is, how suspicious its neighbours look, whether this
+      relation is redundant, and how varied the neighbourhood is.</p>
+
+      <p style="font-size:var(--step--1); color:var(--ink-soft); margin:0">
+        <span class="chip ok">engineering note</span>&nbsp; <span class="m"><i>j</i><sub>v,r</sub></span> is the
+        expensive one. Computing Jaccard overlap pairwise in Python is <code>O(deg²)</code>, which is harmless on
+        YelpChi (mean degree 3) and catastrophic on Amazon (mean degree 598). Precomputing it per edge via a
+        sparse product made Amazon runs <strong>11.8× faster</strong> — 2 h 08 m per seed down to 10 m 51 s — with
+        bit-identical results.</p>
+    </div>
+  </div>
+
+  <div class="aside">
+    <span class="lbl">What the panel said</span>
+    <p>Two seats flagged that <b>the <span class="m"><i>z</i><sub>v</sub></span> pathway measures null</b>:
+    removing it <i>improves</i> the model by +0.33 pp (p = 0.44). Since routing LLM signal into the policy
+    state is named in the abstract as part of what is novel, a reviewer reads that as the novelty measuring
+    zero.</p>
+    <p>The Domain seat also objected to the <b>name</b>: <span class="m"><i>z</i><sub>v</sub></span> is an LLM
+    re-encoding of graph statistics the GNN already consumes. Calling its output "structural-reasoning scores"
+    that supply "a semantic prior" is a category error.</p>
+  </div>
+
+  <h3>The policy — a Beta distribution over "what fraction to keep"</h3>
+
+  <div class="eq-card adapt">
+    <div class="eq-label"><span class="nm">Equation 4</span><span>Beta-parameterised policy</span></div>
+    <div class="eq-display">
+      <span class="m">
+        <span class="br">(</span><i>α</i><sub>v,r</sub>, <i>β</i><sub>v,r</sub><span class="br">)</span>
+        <span class="op">=</span> <i>g</i><sup>r</sup><sub>ψ</sub><span class="br">(</span><i>s</i><sub>v,r</sub><span class="br">)</span>
+        <span class="op">,</span>
+        <i>θ</i><sub>v,r</sub> <span class="op">∼</span>
+        <span class="fn">Beta</span><span class="br">(</span><i>α</i><sub>v,r</sub>, <i>β</i><sub>v,r</sub><span class="br">)</span>
+      </span>
+    </div>
+    <div class="eq-body">
+      <div class="terms two">
+        <div class="term"><span class="sym">g<sup>r</sup><sub>ψ</sub></span><span class="def">a small network — <b>one head per relation</b> — mapping state to distribution parameters</span></div>
+        <div class="term"><span class="sym">α, β</span><span class="def"><span class="m"><span class="fn">softplus</span>(·) + ½</span>, which keeps both <b>strictly positive</b> as Beta requires</span></div>
+        <div class="term"><span class="sym">θ<sub>v,r</sub></span><span class="def">the <b>threshold</b> — a number in [0,1], per node, per relation</span></div>
+        <div class="term"><span class="sym">∼</span><span class="def"><b>sampled</b> during training (exploration); at evaluation the mean <span class="m"><i>α</i>/(<i>α</i>+<i>β</i>)</span> is used instead</span></div>
+      </div>
+      <p class="inwords"><span class="lbl">Why Beta</span>
+      A threshold is a fraction, so it must live on [0,1] — and the Beta distribution is the natural
+      distribution on that interval. Emitting a <i>distribution</i> rather than a number is what makes the
+      policy trainable by policy gradient: you can sample from it, score the sample, and push the
+      distribution toward samples that scored well.</p>
+    </div>
+  </div>
+
+  <h3>One number, two jobs</h3>
+
+  <div class="prose">
+    <p>This is the mechanism worth understanding properly, because it is the paper's architectural core.
+    The single scalar <span class="m"><i>θ</i><sub>v,r</sub></span> controls both the filtering <em>and</em>
+    the relation mixing:</p>
+  </div>
+
+  <figure>
+    <div class="figframe">
+      <svg viewBox="0 0 740 320" role="img" aria-label="Theta both cuts the ranked neighbour list and sets the relation weight">
+        <g font-family="var(--sans)" font-size="12">
+          <text x="0" y="14" fill="var(--ink-faint)" font-size="11" font-family="var(--mono)" letter-spacing="1">STEP 1 — RANK BY D_r</text>
+          <!-- ranked neighbours -->
+          <g>
+            <rect x="0"   y="30" width="62" height="34" rx="2" fill="var(--tint-struct)" stroke="var(--structural)"/>
+            <rect x="68"  y="30" width="62" height="34" rx="2" fill="var(--tint-struct)" stroke="var(--structural)"/>
+            <rect x="136" y="30" width="62" height="34" rx="2" fill="var(--tint-struct)" stroke="var(--structural)"/>
+            <rect x="204" y="30" width="62" height="34" rx="2" fill="var(--tint-struct)" stroke="var(--structural)"/>
+            <rect x="272" y="30" width="62" height="34" rx="2" fill="var(--surface-2)" stroke="var(--rule)"/>
+            <rect x="340" y="30" width="62" height="34" rx="2" fill="var(--surface-2)" stroke="var(--rule)"/>
+            <rect x="408" y="30" width="62" height="34" rx="2" fill="var(--surface-2)" stroke="var(--rule)"/>
+            <rect x="476" y="30" width="62" height="34" rx="2" fill="var(--surface-2)" stroke="var(--rule)"/>
+          </g>
+          <g fill="var(--ink-soft)" font-size="10.5" text-anchor="middle">
+            <text x="31" y="51">.02</text><text x="99" y="51">.07</text><text x="167" y="51">.11</text>
+            <text x="235" y="51">.19</text><text x="303" y="51">.34</text><text x="371" y="51">.52</text>
+            <text x="439" y="51">.68</text><text x="507" y="51">.81</text>
+          </g>
+          <text x="0" y="82" fill="var(--ink-faint)" font-size="10.5">closest in predicted guilt</text>
+          <text x="538" y="82" text-anchor="end" fill="var(--ink-faint)" font-size="10.5">furthest</text>
+
+          <!-- cut -->
+          <line x1="269" y1="20" x2="269" y2="96" stroke="var(--adaptive)" stroke-width="2.5" stroke-dasharray="5 3"/>
+          <circle cx="269" cy="20" r="4" fill="var(--adaptive)"/>
+          <text x="277" y="110" fill="var(--adaptive)" font-size="11.5" font-weight="600">θ = 0.5 → keep ⌈0.5 × 8⌉ = 4</text>
+
+          <!-- split arrows -->
+          <text x="0" y="150" fill="var(--ink-faint)" font-size="11" font-family="var(--mono)" letter-spacing="1">STEP 2 — THE SAME θ DOES TWO JOBS</text>
+
+          <rect x="0" y="168" width="350" height="128" rx="3" fill="var(--tint-adapt)" stroke="var(--adaptive)" stroke-width="1.2"/>
+          <text x="18" y="194" fill="var(--adaptive)" font-size="12" font-weight="650">JOB A · how many neighbours survive</text>
+          <text x="18" y="218" fill="var(--ink-soft)" font-size="11.5">Keep the ⌈θ·|N</text>
+          <text x="104" y="221" fill="var(--ink-soft)" font-size="9">r</text>
+          <text x="110" y="218" fill="var(--ink-soft)" font-size="11.5">(v)|⌉ closest by D</text>
+          <text x="226" y="221" fill="var(--ink-soft)" font-size="9">r</text>
+          <text x="232" y="218" fill="var(--ink-soft)" font-size="11.5">.</text>
+          <text x="18" y="240" fill="var(--ink-soft)" font-size="11.5">A suspicious node in a hostile</text>
+          <text x="18" y="258" fill="var(--ink-soft)" font-size="11.5">neighbourhood can shrink its own</text>
+          <text x="18" y="276" fill="var(--ink-soft)" font-size="11.5">θ and ignore almost everyone.</text>
+
+          <rect x="390" y="168" width="350" height="128" rx="3" fill="var(--tint-adapt)" stroke="var(--adaptive)" stroke-width="1.2"/>
+          <text x="408" y="194" fill="var(--adaptive)" font-size="12" font-weight="650">JOB B · how much the relation counts</text>
+          <text x="408" y="218" fill="var(--ink-soft)" font-size="11.5">The per-relation mean of θ becomes</text>
+          <text x="408" y="240" fill="var(--ink-soft)" font-size="11.5">ω</text>
+          <text x="418" y="243" fill="var(--ink-soft)" font-size="9">r</text>
+          <text x="425" y="240" fill="var(--ink-soft)" font-size="11.5">in Equation 2 — so filtering and</text>
+          <text x="408" y="262" fill="var(--ink-soft)" font-size="11.5">relation weighting are driven by one</text>
+          <text x="408" y="280" fill="var(--ink-soft)" font-size="11.5">learned quantity, not two.</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>The mechanism in full.</b> Neighbours are sorted by label-aware distance; <span class="m"><i>θ</i></span>
+    cuts the list; and the average <span class="m"><i>θ</i></span> within a relation becomes that relation's weight in the
+    fusion step. The whole aggregation adapts node by node rather than once per relation — which is the paper's
+    actual architectural claim.</figcaption>
+  </figure>
+
+  <div class="aside">
+    <span class="lbl">What the panel said</span>
+    <p>The Perspective seat's sharpest finding: <b>this mechanism is never demonstrated.</b> The paper reports no
+    distribution of <span class="m"><i>θ</i></span> at convergence — no per-relation spread, no across-node
+    variance, no saturation fraction. If <span class="m"><i>θ</i></span> converges to roughly a constant within
+    each relation, then CAPN is an expensive way to learn CARE-GNN's global threshold and the +0.58 pp has a much
+    duller explanation. A reader currently cannot tell those two worlds apart — and the values are already sitting
+    in the training logs.</p>
+    <p>The Devil's Advocate added a matching control gap: there is <b>no non-learned per-node threshold
+    baseline</b>. Comparing CAPN against a global bandit changes three things at once — per-node granularity,
+    stochasticity, and learning — so the cheapest rival explanation (per-node variation acts as a regulariser,
+    learning irrelevant) is untested.</p>
+  </div>
+
+  <h3>The reward — what counts as a good decision</h3>
+
+  <div class="eq-card adapt">
+    <div class="eq-label"><span class="nm">Equation 5</span><span>Shaped reward</span></div>
+    <div class="eq-display">
+      <span class="m">
+        <i>R</i> <span class="op">=</span>
+        <i>w</i><sub>1</sub> <span class="fn">clip</span><span class="br">(</span>
+        Δ<i>d̄</i> / <span class="br">(</span>|<i>d̄</i><sub>prev</sub>| + <i>ε</i><span class="br">)</span>, −1, 1<span class="br">)</span>
+        <span class="op">+</span> <i>w</i><sub>2</sub><span class="br">(</span><span class="fn">acc</span> <span class="op">−</span> <span class="fn">acc</span><span style="font-style:normal">&#772;</span><span class="br">)</span>
+        <span class="op">−</span> <i>w</i><sub>3</sub> <span class="br">|</span><i>θ</i> <span class="op">−</span> ½<span class="br">|</span>
+      </span>
+    </div>
+    <div class="eq-body">
+      <div class="terms">
+        <div class="term"><span class="sym">term 1</span><span class="def"><b>Did the neighbourhood tighten?</b> If mean label-aware distance fell, the policy filtered well. Divided by the previous value to make it relative, and clipped to [−1,1] so one wild batch cannot dominate</span></div>
+        <div class="term"><span class="sym">term 2</span><span class="def"><b>Did accuracy beat its own recent average?</b> A running baseline, so the policy is rewarded for improvement rather than for the task being easy</span></div>
+        <div class="term"><span class="sym">term 3</span><span class="def"><b>A penalty for sitting at ½.</b> θ = 0.5 is the do-nothing answer; this term pushes the policy to commit</span></div>
+      </div>
+      <p class="inwords"><span class="lbl">In words</span>
+      Reward the policy for cutting away untrustworthy neighbours and for actually improving accuracy, and
+      nudge it away from the fence-sitting answer that would make it indistinguishable from doing nothing.</p>
+      <p class="aside" style="margin-top:1.1rem">
+        <span class="lbl">What the panel said</span>
+        Term 3 <b>deliberately pushes θ toward the extremes</b>. Combined with the missing θ diagnostics above,
+        there is no way to tell whether the converged policy sits in a healthy regime or a degenerate one
+        (θ→1 keeps everyone, θ→0 keeps no one). The weights <span class="m"><i>w</i><sub>1</sub></span>,
+        <span class="m"><i>w</i><sub>2</sub></span>, <span class="m"><i>w</i><sub>3</sub></span> are never given
+        numeric values anywhere in the paper.</p>
+    </div>
+  </div>
+
+  <h3>Learning it — actor–critic</h3>
+
+  <div class="eq-card adapt">
+    <div class="eq-label"><span class="nm">Equation 6</span><span>Policy and critic losses</span></div>
+    <div class="eq-display">
+      <div class="m" style="display:inline-block; text-align:left; line-height:2.1">
+        <div><i>A</i><sub>v,r</sub> <span class="op">=</span> <i>R</i> <span class="op">−</span> <i>V</i><sub>η</sub><span class="br">(</span><i>s</i><sub>v,r</sub><span class="br">)</span></div>
+        <div><i>L</i><sub>policy</sub> <span class="op">=</span> <span class="op">−</span>Σ<sub>v,r</sub> <i>A</i><sub>v,r</sub> log <i>π</i><sub>ψ</sub><span class="br">(</span><i>θ</i><sub>v,r</sub> | <i>s</i><sub>v,r</sub><span class="br">)</span></div>
+        <div><i>L</i><sub>critic</sub> <span class="op">=</span> <span class="br">(</span><i>V</i><sub>η</sub><span class="br">(</span><i>s</i><sub>v,r</sub><span class="br">)</span> <span class="op">−</span> <i>R</i><span class="br">)</span><sup>2</sup></div>
+      </div>
+    </div>
+    <div class="eq-body">
+      <div class="terms">
+        <div class="term"><span class="sym">V<sub>η</sub></span><span class="def">the <b>critic</b> — a second network predicting what reward to expect from this state</span></div>
+        <div class="term"><span class="sym">A<sub>v,r</sub></span><span class="def">the <b>advantage</b>: did this decision beat expectations? Using <i>surprise</i> rather than raw reward is what cuts the variance</span></div>
+        <div class="term"><span class="sym">L<sub>policy</sub></span><span class="def">push up the log-probability of choices with positive advantage, push down the rest</span></div>
+        <div class="term"><span class="sym">L<sub>critic</sub></span><span class="def">train the critic by regression — make its prediction match what actually happened</span></div>
+      </div>
+      <p class="inwords"><span class="lbl">The detail that mattered</span>
+      The advantage is formed <strong>per (v, r) pair</strong>, not once per batch. The paper is explicit that
+      this is what made training converge at all — a single batch-level REINFORCE signal was too noisy. The
+      policy is also switched off for the first few epochs and then ramped in linearly, so the backbone settles
+      before the policy starts rewiring its neighbourhoods.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="div">
+
+<!-- ============ 3.4 ============ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">3.4</span>
+    <h2>The semantic pillar — two doors, one of which works</h2>
+  </div>
+
+  <div class="prose">
+    <p>The LLM enters the system through two separate entrances. This is worth drawing, because the paper's
+    own measurements say very different things about them.</p>
+  </div>
+
+  <figure>
+    <div class="figframe">
+      <svg viewBox="0 0 740 300" role="img" aria-label="Two LLM pathways: structural scores to the policy state (null) and text scores to node features (significant)">
+        <g font-family="var(--sans)" font-size="12">
+          <!-- door 1 -->
+          <rect x="0" y="20" width="210" height="76" rx="3" fill="var(--tint-sem)" stroke="var(--semantic)"/>
+          <text x="105" y="46" text-anchor="middle" fill="var(--semantic)" font-weight="650" font-size="12">DOOR 1 · graph statistics</text>
+          <text x="105" y="68" text-anchor="middle" fill="var(--ink-soft)" font-size="11">LLM reads degrees, overlaps,</text>
+          <text x="105" y="84" text-anchor="middle" fill="var(--ink-soft)" font-size="11">anomalies → scores z_v</text>
+
+          <line x1="210" y1="58" x2="330" y2="58" stroke="var(--semantic)" stroke-width="2" stroke-dasharray="6 4"/>
+          <rect x="330" y="30" width="180" height="56" rx="3" fill="var(--tint-adapt)" stroke="var(--adaptive)"/>
+          <text x="420" y="54" text-anchor="middle" fill="var(--adaptive)" font-weight="650" font-size="12">policy state (Eq. 3)</text>
+          <text x="420" y="74" text-anchor="middle" fill="var(--ink-soft)" font-size="11">the "unification" pathway</text>
+
+          <rect x="540" y="34" width="200" height="48" rx="3" fill="var(--surface-2)" stroke="var(--null)"/>
+          <text x="640" y="54" text-anchor="middle" fill="var(--null)" font-size="11.5" font-weight="650">MEASURED NULL</text>
+          <text x="640" y="71" text-anchor="middle" fill="var(--ink-soft)" font-size="11">+0.33 pp on removal, p = 0.44</text>
+
+          <!-- door 2 -->
+          <rect x="0" y="170" width="210" height="76" rx="3" fill="var(--tint-sem)" stroke="var(--semantic)"/>
+          <text x="105" y="196" text-anchor="middle" fill="var(--semantic)" font-weight="650" font-size="12">DOOR 2 · review text</text>
+          <text x="105" y="218" text-anchor="middle" fill="var(--ink-soft)" font-size="11">templated phrasing, sentiment</text>
+          <text x="105" y="234" text-anchor="middle" fill="var(--ink-soft)" font-size="11">vs rating, repetition → t_v</text>
+
+          <line x1="210" y1="208" x2="330" y2="208" stroke="var(--semantic)" stroke-width="2.5"/>
+          <rect x="330" y="180" width="180" height="56" rx="3" fill="var(--tint-struct)" stroke="var(--structural)"/>
+          <text x="420" y="204" text-anchor="middle" fill="var(--structural)" font-weight="650" font-size="12">node features (Eq. 7)</text>
+          <text x="420" y="224" text-anchor="middle" fill="var(--ink-soft)" font-size="11">via the gated residual</text>
+
+          <rect x="540" y="184" width="200" height="48" rx="3" fill="var(--surface-2)" stroke="var(--confirmed)"/>
+          <text x="640" y="204" text-anchor="middle" fill="var(--confirmed)" font-size="11.5" font-weight="650">CONFIRMED</text>
+          <text x="640" y="221" text-anchor="middle" fill="var(--ink-soft)" font-size="11">+1.97 pp, 20/20 seeds</text>
+
+          <text x="370" y="135" text-anchor="middle" fill="var(--ink-faint)" font-size="11.5" font-style="italic">the pillar that carries the paper is door two</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>Both doors are claimed as novel in the abstract; only one of them measures.</b> Door one is
+    the "LLM into the policy state" pathway that makes the framework a <i>unification</i> rather than two
+    separate additions — and it contributes nothing measurable.</figcaption>
+  </figure>
+
+  <h3>The gate — why not just concatenate?</h3>
+
+  <div class="prose">
+    <p>The obvious way to add six text scores to 32 features is to append them, making 38. The paper reports
+    that this <em>hurts</em>: a wider weight matrix absorbs noise faster than signal. So instead the scores are
+    projected back down and <em>added</em>, leaving the feature dimension untouched.</p>
+  </div>
+
+  <div class="eq-card sem">
+    <div class="eq-label"><span class="nm">Equation 7</span><span>Dimension-preserving gated residual</span></div>
+    <div class="eq-display">
+      <span class="m">
+        <i>x̃</i><sub>v</sub> <span class="op">=</span> <i>x</i><sub>v</sub> <span class="op">+</span>
+        <span class="hi" style="--hl: var(--tint-sem)">σ<span class="br">(</span><i>g</i><span class="br">)</span></span>
+        <span class="op">⊙</span> <span class="br">(</span><i>W</i><sub>t</sub> <i>t</i><sub>v</sub><span class="br">)</span>
+      </span>
+    </div>
+    <div class="eq-body">
+      <div class="terms two">
+        <div class="term"><span class="sym">t<sub>v</sub></span><span class="def">the <b>six text-risk scores</b> for this review</span></div>
+        <div class="term"><span class="sym">W<sub>t</sub></span><span class="def">projects 6 numbers up into the <b>32-dim</b> feature space</span></div>
+        <div class="term"><span class="sym">σ(g)</span><span class="def">a <b>per-dimension gate</b>. <i>g</i> starts at −2, so σ(g) ≈ 0.12 — the door opens only 12%</span></div>
+        <div class="term"><span class="sym">⊙</span><span class="def">element-wise multiply: each of the 32 dimensions opens independently</span></div>
+      </div>
+      <p class="inwords"><span class="lbl">Why it is built this way</span>
+      Training starts almost exactly where plain CARE-GNN would, because the text contributes only 12% at
+      initialisation. The network then opens each dimension only where the text earns it — and, just as
+      importantly, can close it again where the text is noise. Dimension stays 32, so no weight matrix widens.</p>
+    </div>
+  </div>
+
+  <div class="aside">
+    <span class="lbl">What the panel said</span>
+    <p><b>The six scores are never listed anywhere in the paper.</b> §3.4 names three, §4.1 names three and
+    says "and similar cues", §4.3 names none. The deterministic scorer that the abstract promotes as making the
+    signal "reproducible with no API dependence" is described only as existing — no formulae. That makes the
+    paper's most portable claim unreproducible precisely where it matters.</p>
+    <p>A second alternative explanation went untested: the gate injects a <b>small learned perturbation</b> at
+    σ(g)≈0.12, which is itself a plausible stabiliser regardless of what <span class="m"><i>t</i><sub>v</sub></span>
+    contains. Routing random values through the same gate would separate "the text is informative" from "a small
+    perturbation regularises training".</p>
+  </div>
+</section>
+
+<hr class="div">
+
+<!-- ============ 3.5 ============ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">3.5</span>
+    <h2>One objective holds it together</h2>
+  </div>
+
+  <div class="eq-card" style="--accent: var(--deep)">
+    <div class="eq-label"><span class="nm">Equation 8</span><span>Unified training objective</span></div>
+    <div class="eq-display">
+      <span class="m">
+        <i>L</i> <span class="op">=</span>
+        <span style="color:var(--structural)"><i>L</i><sub>gnn</sub></span> <span class="op">+</span>
+        <i>λ</i><sub>1</sub><span style="color:var(--structural)"><i>L</i><sub>label</sub></span> <span class="op">+</span>
+        <i>λ</i><sub>π</sub><span style="color:var(--adaptive)"><i>L</i><sub>policy</sub></span> <span class="op">+</span>
+        <i>λ</i><sub>c</sub><span style="color:var(--adaptive)"><i>L</i><sub>critic</sub></span>
+      </span>
+    </div>
+    <div class="eq-body">
+      <div class="terms two">
+        <div class="term" style="--accent:var(--structural)"><span class="sym">L<sub>gnn</sub></span><span class="def">the main <b>classification</b> loss</span></div>
+        <div class="term" style="--accent:var(--structural)"><span class="sym">L<sub>label</sub></span><span class="def">trains the small label predictor that feeds Eq. 1 <b>and</b> the policy state</span></div>
+        <div class="term" style="--accent:var(--adaptive)"><span class="sym">L<sub>policy</sub></span><span class="def">the actor term — weight <span class="m"><i>λ</i><sub>π</sub></span> follows the warmup-and-ramp schedule</span></div>
+        <div class="term" style="--accent:var(--adaptive)"><span class="sym">L<sub>critic</sub></span><span class="def">the critic's regression term</span></div>
+      </div>
+      <p class="inwords"><span class="lbl">In words</span>
+      Everything is optimised together. The gradients that sharpen the classifier and the gradients that shape
+      the filtering policy are applied in the same step, rather than alternating between two training phases.
+      The semantic pillar has no loss term of its own — it enters through the features and the state, both of
+      which are already differentiable.</p>
+      <p style="font-size:var(--step--1); color:var(--ink-soft); margin:0">
+        <span class="chip gapc">reporting gap</span>&nbsp; None of
+        <span class="m"><i>λ</i><sub>1</sub></span>, <span class="m"><i>λ</i><sub>π</sub></span>,
+        <span class="m"><i>λ</i><sub>c</sub></span> is given a numeric value in the paper, and neither are the
+        reward weights or the warmup/ramp epoch counts ("the first few epochs"). Equation 8 as printed cannot be
+        reproduced.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="div">
+
+<!-- ============ scoreboard ============ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">★</span>
+    <h2>What each piece is actually worth</h2>
+  </div>
+
+  <div class="prose">
+    <p>Pulling Section 3's components against the held-out measurements, since this is the comparison the
+    paper never puts in one place.</p>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>Component</th><th>Where</th><th class="num">Effect</th><th>Evidence</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Gated text injection</td>
+          <td>Eq. 7</td>
+          <td class="num" style="color:var(--confirmed); font-weight:600">+1.97 pp</td>
+          <td><span class="chip ok">confirmed</span> 20/20 seeds, p = 2.9×10⁻¹³</td>
+        </tr>
+        <tr>
+          <td>Learned per-node threshold</td>
+          <td>Eq. 3–6</td>
+          <td class="num" style="color:var(--confirmed); font-weight:600">+0.58 pp</td>
+          <td><span class="chip ok">confirmed</span> 20/20 seeds, p = 2.5×10⁻¹¹</td>
+        </tr>
+        <tr>
+          <td>Same, replicated on Amazon</td>
+          <td>Eq. 3–6</td>
+          <td class="num" style="color:var(--confirmed); font-weight:600">+0.51 pp</td>
+          <td><span class="chip ok">confirmed</span> 19/20 seeds, p = 6.4×10⁻⁷</td>
+        </tr>
+        <tr>
+          <td>Both together</td>
+          <td>Eq. 8</td>
+          <td class="num" style="font-weight:600">+2.70 pp</td>
+          <td>20/20 seeds — but see the interaction below</td>
+        </tr>
+        <tr>
+          <td>LLM scores → policy state</td>
+          <td>Eq. 3, <span class="m"><i>z</i><sub>v</sub></span></td>
+          <td class="num" style="color:var(--null); font-weight:600">−0.33 pp</td>
+          <td><span class="chip nul">null</span> removing it <i>helps</i>, p = 0.44</td>
+        </tr>
+        <tr>
+          <td>LLM priors → policy init</td>
+          <td>(design, since removed)</td>
+          <td class="num" style="color:var(--null); font-weight:600">−0.71 pp</td>
+          <td><span class="chip nul">harmful</span> suppressed the policy it was meant to help</td>
+        </tr>
+        <tr>
+          <td><b>Interaction between the pillars</b></td>
+          <td>Eq. 8</td>
+          <td class="num" style="color:var(--gap); font-weight:650">+0.16 pp</td>
+          <td><span class="chip gapc">below noise</span> vs. R3's own seed-std of 0.43 pp</td>
+        </tr>
+        <tr>
+          <td>θ actually varying per node</td>
+          <td>Eq. 4</td>
+          <td class="num" style="color:var(--gap)">—</td>
+          <td><span class="chip gapc">never measured</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose" style="margin-top:2rem">
+    <p>That last row of numbers is the one to sit with. Both pillars work. Both are confirmed on held-out
+    seeds, and one now on a second dataset. But <strong>+0.58 and +1.96 sum to +2.54, and together they give
+    +2.70</strong> — the pillars are <em>additive</em>. Nothing extra appears from combining them.</p>
+
+    <p>Section 3 builds two interfaces designed to produce exactly that extra something: LLM scores into the
+    policy state, and LLM priors initialising the policy. The first measures null; the second measures
+    harmful. So the machinery of unification is present in the architecture and absent from the results — and
+    that gap between what Section 3 builds and what Section 4 measures is the single thing the review panel
+    pressed hardest on.</p>
+
+    <p>It is also, read the other way, a finding. The 2025 wave of GNN+LLM detectors assumes integration is
+    where the value lies. This paper built the integration and measured that it is not.</p>
+  </div>
+</section>
+
+</div>

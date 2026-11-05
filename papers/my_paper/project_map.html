@@ -1,0 +1,470 @@
+<title>Project Map — GNN + RL + LLM Fraud Detection</title>
+
+<style>
+  :root{
+    --ground:#F6F7F9;--surface:#FFFFFF;--surface-2:#EDF0F4;
+    --ink:#171C24;--ink-soft:#4A5464;--ink-faint:#7B8696;--rule:#D9DEE6;
+    --s1:#1B6EC2;--s2:#B5700C;--s3:#0A9D5E;--s4:#8E4FA8;--base:#6F7A8A;
+    --confirmed:#0E7C7B;--null:#9A6A08;--gap:#B03A3A;
+    --tint1:#E8F1FA;--tint2:#FAF1E3;--tint3:#E6F6EE;--tint4:#F3EBF8;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;
+    --sans:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:ui-monospace,'SF Mono','Cascadia Mono',Menlo,Consolas,monospace;
+    --step--1:clamp(.80rem,.78rem + .1vw,.86rem);
+    --step-0:clamp(1rem,.97rem + .15vw,1.08rem);
+    --step-1:clamp(1.2rem,1.12rem + .4vw,1.4rem);
+    --step-2:clamp(1.5rem,1.35rem + .7vw,1.9rem);
+    --step-3:clamp(2rem,1.7rem + 1.3vw,2.9rem);
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --ground:#10141A;--surface:#171C24;--surface-2:#1E242E;
+    --ink:#E6EAF0;--ink-soft:#A8B2C0;--ink-faint:#76818F;--rule:#2A323E;
+    --s1:#3F88C4;--s2:#C0821F;--s3:#1FA46C;--s4:#9C6CBC;--base:#808B9B;
+    --confirmed:#43B5B3;--null:#D4A338;--gap:#E07878;
+    --tint1:#16222E;--tint2:#2A2114;--tint3:#152417;--tint4:#221A2A;}}
+  :root[data-theme="dark"]{--ground:#10141A;--surface:#171C24;--surface-2:#1E242E;
+    --ink:#E6EAF0;--ink-soft:#A8B2C0;--ink-faint:#76818F;--rule:#2A323E;
+    --s1:#3F88C4;--s2:#C0821F;--s3:#1FA46C;--s4:#9C6CBC;--base:#808B9B;
+    --confirmed:#43B5B3;--null:#D4A338;--gap:#E07878;
+    --tint1:#16222E;--tint2:#2A2114;--tint3:#152417;--tint4:#221A2A;}
+  :root[data-theme="light"]{--ground:#F6F7F9;--surface:#FFFFFF;--surface-2:#EDF0F4;
+    --ink:#171C24;--ink-soft:#4A5464;--ink-faint:#7B8696;--rule:#D9DEE6;
+    --s1:#1B6EC2;--s2:#B5700C;--s3:#0A9D5E;--s4:#8E4FA8;--base:#6F7A8A;
+    --confirmed:#0E7C7B;--null:#9A6A08;--gap:#B03A3A;
+    --tint1:#E8F1FA;--tint2:#FAF1E3;--tint3:#E6F6EE;--tint4:#F3EBF8;}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+       font-size:var(--step-0);line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:64rem;margin:0 auto;padding:0 1.5rem 6rem}
+  .prose{max-width:37rem}
+
+  header.mh{padding:4rem 0 2rem;border-bottom:2px solid var(--ink);margin-bottom:1rem}
+  .eyebrow{font-family:var(--mono);font-size:var(--step--1);letter-spacing:.14em;
+           text-transform:uppercase;color:var(--ink-faint);margin:0 0 1rem}
+  h1{font-family:var(--serif);font-size:var(--step-3);line-height:1.06;font-weight:600;
+     letter-spacing:-.015em;text-wrap:balance;margin:0 0 1.1rem}
+  .standfirst{font-family:var(--serif);font-size:var(--step-1);line-height:1.5;
+              color:var(--ink-soft);max-width:40rem;margin:0}
+
+  /* slide blocks */
+  .slide{margin:3.5rem 0 0;padding-top:2rem;border-top:1px solid var(--rule)}
+  .slide:first-of-type{border-top:none}
+  .shead{display:flex;align-items:baseline;gap:1rem;margin-bottom:.4rem}
+  .snum{font-family:var(--mono);font-size:var(--step--1);color:var(--ink-faint);
+        letter-spacing:.08em;flex:none;padding-top:.3rem}
+  h2{font-family:var(--serif);font-size:var(--step-2);font-weight:600;letter-spacing:-.01em;
+     line-height:1.15;margin:0;text-wrap:balance}
+  .say{font-family:var(--serif);font-size:var(--step-1);color:var(--ink-soft);
+       line-height:1.5;margin:.3rem 0 1.6rem;max-width:40rem}
+  h3{font-size:var(--step-0);font-weight:650;margin:2rem 0 .6rem}
+  p{margin:0 0 1rem}
+
+  .frame{background:var(--surface);border:1px solid var(--rule);border-radius:3px;
+         padding:1.5rem 1.25rem;overflow-x:auto;margin:1.25rem 0}
+  .frame svg{display:block;width:100%;height:auto;min-width:560px}
+  figcaption{font-size:var(--step--1);color:var(--ink-soft);line-height:1.55;max-width:42rem}
+  figcaption b{color:var(--ink);font-weight:600}
+  figure{margin:1.5rem 0}
+
+  /* stat row */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:1px;
+         background:var(--rule);border:1px solid var(--rule);border-radius:3px;
+         overflow:hidden;margin:1.5rem 0}
+  .stat{background:var(--surface);padding:1rem 1.1rem}
+  .stat .v{font-size:1.6rem;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums;
+           letter-spacing:-.02em}
+  .stat .k{font-family:var(--mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;
+           color:var(--ink-faint);margin-top:.3rem}
+
+  .tbl-wrap{overflow-x:auto;margin:1.25rem 0}
+  table{border-collapse:collapse;width:100%;font-size:var(--step--1);font-variant-numeric:tabular-nums}
+  th,td{text-align:left;padding:.5rem .75rem;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{font-family:var(--mono);font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;
+     color:var(--ink-faint);font-weight:500}
+  td.num{text-align:right}
+  tbody tr:last-child td{border-bottom:none}
+  code{font-family:var(--mono);font-size:.86em;background:var(--surface-2);padding:.1em .35em;border-radius:2px}
+
+  .chip{display:inline-flex;align-items:center;font-family:var(--mono);font-size:.7rem;
+        letter-spacing:.06em;text-transform:uppercase;padding:.16rem .45rem;border-radius:2px;
+        border:1px solid currentColor;white-space:nowrap}
+  .chip.ok{color:var(--confirmed)}.chip.nul{color:var(--null)}.chip.gapc{color:var(--gap)}
+
+  /* Q&A */
+  .qa{border:1px solid var(--rule);border-radius:3px;background:var(--surface);
+      margin:0 0 .75rem;overflow:hidden}
+  .qa .q{padding:.85rem 1.1rem;font-weight:650;font-size:var(--step-0);
+         border-left:3px solid var(--gap);background:var(--surface-2)}
+  .qa .a{padding:.9rem 1.1rem;font-size:var(--step--1);color:var(--ink-soft);line-height:1.6;
+         border-left:3px solid var(--confirmed)}
+  .qa .a b{color:var(--ink);font-weight:600}
+  .qa .a .ev{display:block;margin-top:.5rem;font-family:var(--mono);font-size:.72rem;
+             color:var(--ink-faint);letter-spacing:.03em}
+
+  .callout{border-left:3px solid var(--s4);padding:.1rem 0 .1rem 1rem;margin:1.5rem 0;
+           font-family:var(--serif);font-size:var(--step-0);line-height:1.6}
+  .callout .lbl{display:block;font-family:var(--mono);font-size:.72rem;letter-spacing:.12em;
+                text-transform:uppercase;color:var(--ink-faint);margin-bottom:.3rem}
+  :focus-visible{outline:2px solid var(--s2);outline-offset:3px}
+  svg text{font-family:var(--sans)}
+</style>
+
+<div class="wrap">
+
+<header class="mh">
+  <p class="eyebrow">Presentation companion · the whole project in nine views</p>
+  <h1>A wrapper that upgrades graph fraud detectors</h1>
+  <p class="standfirst">Everything you need to talk through the work: the problem, the system, the pipeline,
+  the code, what was actually run, what it produced, where it stops — and the questions you will be asked.</p>
+</header>
+
+<!-- 1 -->
+<section class="slide">
+  <div class="shead"><span class="snum">01</span><h2>The thirty-second version</h2></div>
+  <p class="say">"Fraudsters hide by connecting to honest accounts. I built three defences into one system,
+  and measured what each one is actually worth."</p>
+
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 760 170" role="img" aria-label="Three pillars combine into one detector">
+        <g font-size="12">
+          <rect x="0" y="40" width="150" height="76" rx="4" fill="var(--tint1)" stroke="var(--s1)" stroke-width="1.5"/>
+          <text x="75" y="66" text-anchor="middle" fill="var(--s1)" font-size="12.5" font-weight="650">STRUCTURAL</text>
+          <text x="75" y="86" text-anchor="middle" fill="var(--ink-soft)" font-size="11">multi-relation GNN</text>
+          <text x="75" y="103" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">who is connected to whom</text>
+
+          <rect x="172" y="40" width="150" height="76" rx="4" fill="var(--tint2)" stroke="var(--s2)" stroke-width="1.5"/>
+          <text x="247" y="66" text-anchor="middle" fill="var(--s2)" font-size="12.5" font-weight="650">ADAPTIVE</text>
+          <text x="247" y="86" text-anchor="middle" fill="var(--ink-soft)" font-size="11">learned filtering policy</text>
+          <text x="247" y="103" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">which neighbours to trust</text>
+
+          <rect x="344" y="40" width="150" height="76" rx="4" fill="var(--tint3)" stroke="var(--s3)" stroke-width="1.5"/>
+          <text x="419" y="66" text-anchor="middle" fill="var(--s3)" font-size="12.5" font-weight="650">SEMANTIC</text>
+          <text x="419" y="86" text-anchor="middle" fill="var(--ink-soft)" font-size="11">six text-risk scores</text>
+          <text x="419" y="103" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">what the words reveal</text>
+
+          <text x="512" y="84" text-anchor="middle" fill="var(--ink-faint)" font-size="20">→</text>
+
+          <rect x="534" y="40" width="226" height="76" rx="4" fill="var(--tint4)" stroke="var(--s4)" stroke-width="2"/>
+          <text x="647" y="66" text-anchor="middle" fill="var(--s4)" font-size="12.5" font-weight="650">ONE JOINT OBJECTIVE</text>
+          <text x="647" y="86" text-anchor="middle" fill="var(--ink-soft)" font-size="11">trained end to end</text>
+          <text x="647" y="103" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="600">+2.70 pp AUC over its base</text>
+
+          <text x="380" y="18" text-anchor="middle" fill="var(--ink-faint)" font-size="11.5" font-style="italic">attach to a selection-based GNN detector you already have</text>
+          <text x="380" y="150" text-anchor="middle" fill="var(--ink-soft)" font-size="11.5">validated on 20 held-out seeds · replicated on a second dataset · every pillar measured separately</text>
+        </g>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="callout">
+    <span class="lbl">If you say one thing</span>
+    It is not a competitor to the best detector on the benchmark. It is an <strong>upgrade path</strong> for
+    detectors that filter neighbours — and the unusual part is that every component was measured separately,
+    including the two that turned out not to work.
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="shead"><span class="snum">02</span><h2>Why it is hard</h2></div>
+  <p class="say">"A graph network decides what you are by looking at your neighbours. So fraudsters buy honest neighbours."</p>
+
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 760 150" role="img" aria-label="Two camouflage types and the defence each needs">
+        <g font-size="12">
+          <rect x="0" y="16" width="240" height="118" rx="4" fill="var(--surface-2)" stroke="var(--rule)"/>
+          <text x="120" y="42" text-anchor="middle" fill="var(--gap)" font-size="12.5" font-weight="650">FEATURE CAMOUFLAGE</text>
+          <text x="120" y="66" text-anchor="middle" fill="var(--ink-soft)" font-size="11.5">make your profile look normal</text>
+          <line x1="30" y1="82" x2="210" y2="82" stroke="var(--rule)"/>
+          <text x="120" y="102" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">defeated by comparing</text>
+          <text x="120" y="118" text-anchor="middle" fill="var(--s1)" font-size="11.5" font-weight="600">predicted guilt, not raw features</text>
+
+          <rect x="260" y="16" width="240" height="118" rx="4" fill="var(--surface-2)" stroke="var(--rule)"/>
+          <text x="380" y="42" text-anchor="middle" fill="var(--gap)" font-size="12.5" font-weight="650">RELATION CAMOUFLAGE</text>
+          <text x="380" y="66" text-anchor="middle" fill="var(--ink-soft)" font-size="11.5">connect to honest accounts</text>
+          <line x1="290" y1="82" x2="470" y2="82" stroke="var(--rule)"/>
+          <text x="380" y="102" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">defeated by</text>
+          <text x="380" y="118" text-anchor="middle" fill="var(--s2)" font-size="11.5" font-weight="600">dropping untrusted neighbours</text>
+
+          <rect x="520" y="16" width="240" height="118" rx="4" fill="var(--tint3)" stroke="var(--s3)"/>
+          <text x="640" y="42" text-anchor="middle" fill="var(--s3)" font-size="12.5" font-weight="650">WHAT NEITHER SEES</text>
+          <text x="640" y="66" text-anchor="middle" fill="var(--ink-soft)" font-size="11.5">the review text itself</text>
+          <line x1="550" y1="82" x2="730" y2="82" stroke="var(--rule)"/>
+          <text x="640" y="102" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">32 behavioural features</text>
+          <text x="640" y="118" text-anchor="middle" fill="var(--s3)" font-size="11.5" font-weight="600">never read a single word</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>The third box is the opening for the semantic pillar.</b> YelpChi's features are counts and
+    ratios — review length, rating deviation, posting bursts. Nothing in them looks at whether the review
+    <i>reads</i> like a template. That is free headroom, and it is where the largest single gain comes from.</figcaption>
+  </figure>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="shead"><span class="snum">03</span><h2>The system, end to end</h2></div>
+  <p class="say">"One forward pass. The policy decides the filter, the filter decides the aggregation, the text gate adjusts the inputs."</p>
+
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 760 300" role="img" aria-label="End to end flow from features through filtering to prediction">
+        <defs><marker id="a2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="var(--ink-faint)"/></marker></defs>
+        <g font-size="11.5">
+          <!-- inputs -->
+          <rect x="0" y="92" width="112" height="50" rx="3" fill="var(--surface-2)" stroke="var(--rule)"/>
+          <text x="56" y="112" text-anchor="middle" fill="var(--ink)" font-size="11.5" font-weight="600">node features</text>
+          <text x="56" y="130" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">32 behavioural</text>
+
+          <!-- text gate -->
+          <rect x="0" y="12" width="112" height="56" rx="3" fill="var(--tint3)" stroke="var(--s3)" stroke-width="1.5"/>
+          <text x="56" y="32" text-anchor="middle" fill="var(--s3)" font-size="11.5" font-weight="650">text scores</text>
+          <text x="56" y="49" text-anchor="middle" fill="var(--ink-soft)" font-size="10.5">6, precomputed</text>
+          <line x1="56" y1="68" x2="56" y2="88" stroke="var(--s3)" stroke-width="2" marker-end="url(#a2)"/>
+          <text x="118" y="80" fill="var(--s3)" font-size="10.5">gate σ(g)≈0.12</text>
+
+          <line x1="112" y1="117" x2="152" y2="117" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#a2)"/>
+
+          <!-- label predictor -->
+          <rect x="155" y="92" width="118" height="50" rx="3" fill="var(--tint1)" stroke="var(--s1)" stroke-width="1.5"/>
+          <text x="214" y="112" text-anchor="middle" fill="var(--s1)" font-size="11.5" font-weight="650">label predictor</text>
+          <text x="214" y="130" text-anchor="middle" fill="var(--ink-soft)" font-size="10.5">p̂ = fraud probability</text>
+
+          <line x1="273" y1="117" x2="313" y2="117" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#a2)"/>
+
+          <!-- rank + filter -->
+          <rect x="316" y="84" width="130" height="66" rx="3" fill="var(--tint1)" stroke="var(--s1)" stroke-width="1.5"/>
+          <text x="381" y="104" text-anchor="middle" fill="var(--s1)" font-size="11.5" font-weight="650">rank + filter</text>
+          <text x="381" y="122" text-anchor="middle" fill="var(--ink-soft)" font-size="10.5">per relation, by</text>
+          <text x="381" y="138" text-anchor="middle" fill="var(--ink-soft)" font-size="10.5">label-aware distance</text>
+
+          <!-- policy below -->
+          <rect x="246" y="212" width="200" height="66" rx="3" fill="var(--tint2)" stroke="var(--s2)" stroke-width="1.5"/>
+          <text x="346" y="234" text-anchor="middle" fill="var(--s2)" font-size="11.5" font-weight="650">CAPN policy + critic</text>
+          <text x="346" y="252" text-anchor="middle" fill="var(--ink-soft)" font-size="10.5">state → Beta(α,β) → θ</text>
+          <text x="346" y="268" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">one threshold per node, per relation</text>
+          <line x1="381" y1="212" x2="381" y2="156" stroke="var(--s2)" stroke-width="2" marker-end="url(#a2)"/>
+          <text x="390" y="182" fill="var(--s2)" font-size="10.5" font-weight="600">θ sets how many survive</text>
+
+          <!-- aggregate -->
+          <line x1="446" y1="117" x2="486" y2="117" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#a2)"/>
+          <rect x="489" y="84" width="130" height="66" rx="3" fill="var(--tint1)" stroke="var(--s1)" stroke-width="1.5"/>
+          <text x="554" y="104" text-anchor="middle" fill="var(--s1)" font-size="11.5" font-weight="650">aggregate + fuse</text>
+          <text x="554" y="122" text-anchor="middle" fill="var(--ink-soft)" font-size="10.5">3 relations, weights ω</text>
+          <text x="554" y="138" text-anchor="middle" fill="var(--ink-faint)" font-size="10.5">ω also comes from θ</text>
+          <path d="M 446 245 L 554 245 L 554 156" fill="none" stroke="var(--s2)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#a2)"/>
+
+          <!-- output -->
+          <line x1="619" y1="117" x2="659" y2="117" stroke="var(--ink-faint)" stroke-width="1.5" marker-end="url(#a2)"/>
+          <rect x="662" y="92" width="98" height="50" rx="3" fill="var(--s4)"/>
+          <text x="711" y="112" text-anchor="middle" fill="#fff" font-size="11.5" font-weight="650">fraud score</text>
+          <text x="711" y="130" text-anchor="middle" fill="#fff" font-size="10.5" opacity=".85">per review</text>
+
+          <!-- reward loop -->
+          <path d="M 711 148 L 711 290 L 146 290 L 146 245 L 243 245" fill="none" stroke="var(--s2)"
+                stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+          <text x="420" y="287" text-anchor="middle" fill="var(--s2)" font-size="10.5">shaped reward: did filtering tighten the neighbourhood and lift accuracy?</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>The one sentence that explains the architecture:</b> a single learned number θ decides both
+    how many neighbours survive the filter <i>and</i> how much each relation counts in the final blend. That is
+    what makes the aggregation adapt node by node instead of once per relation.</figcaption>
+  </figure>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="shead"><span class="snum">04</span><h2>Where the language model actually sits</h2></div>
+  <p class="say">"The LLM runs once, before training starts. The training loop never calls it."</p>
+
+  <figure>
+    <div class="frame">
+      <svg viewBox="0 0 760 210" role="img" aria-label="Offline LLM scoring versus the online training loop">
+        <g font-size="11.5">
+          <rect x="0" y="22" width="360" height="160" rx="4" fill="var(--tint3)" stroke="var(--s3)" stroke-width="1.5"/>
+          <text x="16" y="44" fill="var(--s3)" font-family="var(--mono)" font-size="10.5" letter-spacing="1" font-weight="600">OFFLINE · ONCE PER DATASET</text>
+
+          <rect x="20" y="58" width="150" height="44" rx="3" fill="var(--surface)" stroke="var(--rule)"/>
+          <text x="95" y="76" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="600">raw review text</text>
+          <text x="95" y="92" text-anchor="middle" fill="var(--ink-faint)" font-size="10">45,954 reviews</text>
+
+          <rect x="190" y="58" width="150" height="44" rx="3" fill="var(--surface)" stroke="var(--rule)"/>
+          <text x="265" y="76" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="600">scorer</text>
+          <text x="265" y="92" text-anchor="middle" fill="var(--ink-faint)" font-size="10">Haiku · or free heuristic</text>
+
+          <rect x="20" y="118" width="320" height="46" rx="3" fill="var(--surface)" stroke="var(--s3)"/>
+          <text x="180" y="137" text-anchor="middle" fill="var(--s3)" font-size="11" font-weight="650">cached tensor · 6 scores × N nodes</text>
+          <text x="180" y="154" text-anchor="middle" fill="var(--ink-faint)" font-size="10">written to disk, reused by every run</text>
+
+          <text x="380" y="106" text-anchor="middle" fill="var(--ink-faint)" font-size="20">→</text>
+
+          <rect x="400" y="22" width="360" height="160" rx="4" fill="var(--tint2)" stroke="var(--s2)" stroke-width="1.5"/>
+          <text x="416" y="44" fill="var(--s2)" font-family="var(--mono)" font-size="10.5" letter-spacing="1" font-weight="600">ONLINE · EVERY EPOCH</text>
+          <rect x="420" y="58" width="320" height="44" rx="3" fill="var(--surface)" stroke="var(--rule)"/>
+          <text x="580" y="76" text-anchor="middle" fill="var(--ink)" font-size="11" font-weight="600">GNN + policy + critic train together</text>
+          <text x="580" y="92" text-anchor="middle" fill="var(--ink-faint)" font-size="10">reads the cached scores like any other feature</text>
+          <rect x="420" y="118" width="320" height="46" rx="3" fill="var(--surface)" stroke="var(--s2)"/>
+          <text x="580" y="137" text-anchor="middle" fill="var(--s2)" font-size="11" font-weight="650">zero API calls · zero added per-epoch cost</text>
+          <text x="580" y="154" text-anchor="middle" fill="var(--ink-faint)" font-size="10">training time independent of the external model</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption><b>This answers the first question any practical audience asks.</b> And it sets up the stronger
+    finding: because the six quantities are interpretable, a deterministic scorer can compute them for free —
+    and on every graph backbone tested, it matches the language model.</figcaption>
+  </figure>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="shead"><span class="snum">05</span><h2>The codebase</h2></div>
+  <p class="say">"Each pillar is one module. Any of them can be switched off with a single flag."</p>
+
+  <div class="stats">
+    <div class="stat"><div class="v">~4,900</div><div class="k">lines, core + LLM</div></div>
+    <div class="stat"><div class="v">18</div><div class="k">experiment scripts</div></div>
+    <div class="stat"><div class="v">498</div><div class="k">training runs logged</div></div>
+    <div class="stat"><div class="v">84</div><div class="k">result files</div></div>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Module</th><th>Pillar</th><th>What lives there</th></tr></thead>
+      <tbody>
+        <tr><td><code>model.py</code> · <code>layers.py</code></td><td style="color:var(--s1)">structural</td>
+            <td>the multi-relation GNN: intra- and inter-relation aggregation, plus the original heuristic bandit that CAPN replaces</td></tr>
+        <tr><td><code>capn.py</code></td><td style="color:var(--s2)">adaptive</td>
+            <td>everything new: policy network, critic, state constructor, shaped reward, multi-view distance, text gate</td></tr>
+        <tr><td><code>llm/</code></td><td style="color:var(--s3)">semantic</td>
+            <td>offline scoring — node statistics, graph-derived scores, text-derived scores, and the free heuristic scorer</td></tr>
+        <tr><td><code>train.py</code> · <code>config.py</code></td><td>orchestration</td>
+            <td>data split, flag wiring, optimiser split, checkpoint selection</td></tr>
+        <tr><td><code>ablation.py</code> · <code>scripts/</code></td><td>evidence</td>
+            <td>the sweeps, the baselines, and the reimplementations of BWGNN, GraphConsis and XGB-Graph</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="shead"><span class="snum">06</span><h2>What was actually run</h2></div>
+  <p class="say">"Every baseline re-run in-house at one identical split, rather than quoted from other papers."</p>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Study</th><th>Scale</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>Pillar ablation, YelpChi</td><td>4 configs × 20 held-out seeds</td><td>what each pillar contributes</td></tr>
+        <tr><td>Pillar ablation, Amazon</td><td>2 configs × 20 held-out seeds</td><td>does the adaptive pillar replicate on a second dataset</td></tr>
+        <tr><td>Portability</td><td>8 backbones × 2 conditions</td><td>does the text signal travel beyond this architecture</td></tr>
+        <tr><td>Scorer head-to-head</td><td>8 backbones, Haiku vs free heuristic</td><td>is the language model necessary</td></tr>
+        <tr><td>Wrapper transfer</td><td>GraphConsis, 4 configs</td><td>does the whole framework attach to a different host</td></tr>
+        <tr><td>Reward + stability sweeps</td><td>30 held-out seeds</td><td>pre-registered confirmation, anti-p-hacking</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="lbl">The protocol line worth saying out loud</span>
+    Five seeds were used for development. <strong>Twenty fresh seeds, never touched during tuning, were used for
+    every headline claim.</strong> That separation is unusual in this literature and it is the reason the
+    numbers can be trusted at the size they are.
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="shead"><span class="snum">07</span><h2>What it produced</h2></div>
+  <p class="say">"Both pillars work. Both are confirmed on seeds that were never used for tuning."</p>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Finding</th><th class="num">Effect</th><th>Evidence</th></tr></thead>
+      <tbody>
+        <tr><td>Semantic pillar, YelpChi</td><td class="num" style="color:var(--s3);font-weight:650">+1.97 pp</td><td>20/20 seeds · p = 2.9×10⁻¹³</td></tr>
+        <tr><td>Adaptive pillar, YelpChi</td><td class="num" style="color:var(--s2);font-weight:650">+0.58 pp</td><td>20/20 seeds · p = 2.5×10⁻¹¹</td></tr>
+        <tr><td>Adaptive pillar, Amazon</td><td class="num" style="color:var(--s2);font-weight:650">+0.51 pp</td><td>19/20 seeds · p = 6.4×10⁻⁷</td></tr>
+        <tr><td>Full framework vs base</td><td class="num" style="color:var(--s4);font-weight:650">+2.70 pp</td><td>20/20 seeds · AP +5.11 pp</td></tr>
+        <tr><td>Text signal on 8 other backbones</td><td class="num">7 of 8</td><td>significant, incl. the benchmark leader</td></tr>
+        <tr><td>Language model vs free heuristic</td><td class="num">no difference</td><td>n.s. on all 4 graph backbones</td></tr>
+        <tr><td>Our own LLM→policy coupling</td><td class="num" style="color:var(--gap);font-weight:650">−0.71 pp</td><td>it suppressed the component it was built to help</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="lbl">The finding people remember</span>
+    The design nearly reported its own working component as a failure. Under the original coupling the adaptive
+    pillar measured <strong>+0.19 pp, p = 0.10</strong> — a null. Removing the coupling revealed
+    <strong>+0.58 pp on 20 of 20 seeds</strong>. Hand-designed connections between components can suppress the
+    very thing they were meant to assist, and only a de-confounded ablation finds it.
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="shead"><span class="snum">08</span><h2>Where it stops</h2></div>
+  <p class="say">"Say these before anyone asks. It is much stronger coming from you."</p>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Boundary</th><th>The honest statement</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip gapc">scope</span></td>
+            <td><b>It cannot wrap every model.</b> The policy needs a neighbour-selection step and gradients, so tree ensembles and spectral GNNs are out. The claim is "selection-based GNN detectors."</td></tr>
+        <tr><td><span class="chip gapc">evidence</span></td>
+            <td><b>All twenty seeds share one data split.</b> The p-values measure reproducibility across restarts, not across datasets. Multi-split runs are in progress.</td></tr>
+        <tr><td><span class="chip nul">null</span></td>
+            <td><b>Combining the pillars adds nothing beyond their sum.</b> +0.58 and +1.96 give +2.70 — an interaction of +0.16 pp against 0.43 pp of noise. They are additive, not synergistic.</td></tr>
+        <tr><td><span class="chip nul">null</span></td>
+            <td><b>The language model is not necessary.</b> A free scorer matches it on every graph backbone. The value is in which six quantities are measured, not who measures them.</td></tr>
+        <tr><td><span class="chip gapc">metric</span></td>
+            <td><b>Ranking improves; the fixed-threshold F₁ does not.</b> Flat on YelpChi, negative on Amazon. Likely a calibration shift — being tested.</td></tr>
+        <tr><td><span class="chip gapc">host 2</span></td>
+            <td><b>On the second host nothing reached significance</b> at five seeds. The variance there is 20× larger; a twenty-seed run is queued to settle it.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="shead"><span class="snum">09</span><h2>The questions you will get</h2></div>
+  <p class="say">Drawn from a five-reviewer panel that read the paper cold. These are the real ones.</p>
+
+  <div class="qa"><div class="q">"XGBoost gets 0.9177 in your own table. Why would anyone use this?"</div>
+    <div class="a">Because it is not a rival to XGBoost — it is a <b>wrapper</b> for detectors that filter neighbours, and XGBoost has no neighbour-filtering step to attach to. The comparison that matters is base versus base-plus-wrapper. And note the six scores improve XGB-Graph too: that is the same contribution reaching a host the policy cannot.
+      <span class="ev">base → +wrapper is the claim · 0.9106 → 0.9177 on XGB-Graph with the scores alone</span></div></div>
+
+  <div class="qa"><div class="q">"If a free heuristic matches the LLM, why is this an LLM paper?"</div>
+    <div class="a">It should not be, and the revision says so. The contribution is <b>which six quantities to measure</b>; the language model is one convenient way to compute them, and on graph backbones a zero-cost scorer is statistically indistinguishable. That is a result worth having — the 2025 wave of LLM-enhanced detectors assumes the model is load-bearing and none of them ran this control.
+      <span class="ev">n.s. on all four graph backbones · significant only on feature-only classifiers</span></div></div>
+
+  <div class="qa"><div class="q">"Twenty seeds, but one split. What do your p-values actually mean?"</div>
+    <div class="a">They mean "this reproduces across restarts," not "this generalises to other data." That is a real limitation and I state it rather than hide it. Multi-split runs are under way; the Amazon replication on a different dataset already gives independent evidence the effect is not split-specific.
+      <span class="ev">train.py hardcodes random_state=2 · Amazon +0.51 pp, 19/20 seeds</span></div></div>
+
+  <div class="qa"><div class="q">"Half a percentage point. Does that matter operationally?"</div>
+    <div class="a">Not demonstrated yet, and I will not claim it. The gain is in ranking quality; F₁ at a fixed threshold does not move. Precision-at-k and recall-at-fixed-FPR are the right measures and they are computable from predictions already saved. What <i>is</i> established is variance reduction — on Amazon the policy halves seed-to-seed spread, which matters for anyone retraining on a schedule.
+      <span class="ev">±0.0027 → ±0.0011 seed std on Amazon</span></div></div>
+
+  <div class="qa"><div class="q">"What is actually novel here?"</div>
+    <div class="a">Three things, none of them "we combined three techniques." First, a portable six-dimensional text signal that improves seven of eight model families. Second, the first systematic test of whether the LLM in LLM-enhanced graph fraud detection is necessary — it is not. Third, a de-confounded ablation that found a coupling in my own design suppressing the component it was built to help.
+      <span class="ev">the combination is new; what it buys is +0.16 pp, which I report as a null</span></div></div>
+
+  <div class="qa"><div class="q">"You call it a three-pillar framework, but the pillars do not interact."</div>
+    <div class="a">Correct, and that is a finding rather than a defence. I built both intended cross-pillar interfaces and measured them: one contributes nothing, the other actively hurt. The pillars are additive. Anyone planning to integrate an LLM into an RL filtering policy should know that before spending the effort.
+      <span class="ev">scores-in-state −0.33 pp p=0.44 · prior initialisation −0.71 pp</span></div></div>
+
+  <div class="qa"><div class="q">"Your labels come from Yelp's own filter. Are you detecting fraud or imitating a filter?"</div>
+    <div class="a">A fair challenge and one I cannot fully rule out. If that filter keys on linguistic style, the text scores may partly be recovering its heuristics — which would also explain why a crude scorer matches a language model. Discriminating between the two needs human-adjudicated labels or cross-platform transfer. I state it as an open alternative rather than assuming the flattering reading.
+      <span class="ev">YelpChi labels originate from Rayana &amp; Akoglu, KDD 2015</span></div></div>
+</section>
+
+</div>
