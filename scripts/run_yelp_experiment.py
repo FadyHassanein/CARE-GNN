@@ -66,6 +66,7 @@ def parse_best_checkpoint(log_path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tag', required=True, help='experiment name (log + result filenames)')
+    ap.add_argument('--data', default='yelp', choices=['yelp', 'amazon'])
     ap.add_argument('--seeds', type=int, nargs='+', default=SEEDS)
     ap.add_argument('passthrough', nargs=argparse.REMAINDER,
                     help='args after `--` forwarded to train.py')
@@ -82,7 +83,7 @@ def main():
     per_seed = []
     for seed in args.seeds:
         log_path = os.path.join(log_dir, f'seed_{seed}.log')
-        cmd = [PYTHON, 'train.py', '--data', 'yelp', '--model', 'CARE',
+        cmd = [PYTHON, 'train.py', '--data', args.data, '--model', 'CARE',
                '--seed', str(seed)] + extra
         print(f'[{datetime.now():%H:%M:%S}] seed {seed}: {" ".join(cmd)}', flush=True)
         with open(log_path, 'w', encoding='utf-8') as logf:
@@ -111,9 +112,10 @@ def main():
         'auc_mean': st.mean(aucs), 'auc_std': st.stdev(aucs) if len(aucs) > 1 else 0.0,
         'ap_mean': st.mean(aps), 'ap_std': st.stdev(aps) if len(aps) > 1 else 0.0,
         'f1_mean': st.mean(f1s), 'f1_std': st.stdev(f1s) if len(f1s) > 1 else 0.0,
-        'baseline': BASELINE,
-        'auc_delta_vs_baseline': st.mean(aucs) - BASELINE['auc'],
     }
+    if args.data == 'yelp':  # BASELINE is the documented YelpChi Row-4 number
+        summary['baseline'] = BASELINE
+        summary['auc_delta_vs_baseline'] = st.mean(aucs) - BASELINE['auc']
     out_path = os.path.join('results', 'experiments', f'{args.tag}.json')
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2)
@@ -126,8 +128,9 @@ def main():
     print(f'  AUC mean +/- std: {summary["auc_mean"]:.4f} +/- {summary["auc_std"]:.4f}  (n={n})')
     print(f'  AP  mean +/- std: {summary["ap_mean"]:.4f} +/- {summary["ap_std"]:.4f}')
     print(f'  F1  mean +/- std: {summary["f1_mean"]:.4f} +/- {summary["f1_std"]:.4f}')
-    print(f'  documented baseline AUC: {BASELINE["auc"]:.4f} +/- {BASELINE["auc_std"]:.4f}')
-    print(f'  delta vs baseline: {summary["auc_delta_vs_baseline"]:+.4f}')
+    if args.data == 'yelp':
+        print(f'  documented baseline AUC: {BASELINE["auc"]:.4f} +/- {BASELINE["auc_std"]:.4f}')
+        print(f'  delta vs baseline: {summary["auc_delta_vs_baseline"]:+.4f}')
     print(f'  -> {out_path}')
     print('=' * 64)
 

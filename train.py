@@ -78,6 +78,10 @@ def parse_args():
     # device and reproducibility
     parser.add_argument('--device', type=str, default='auto', help='Device: auto, cpu, cuda, cuda:0, etc.')
     parser.add_argument('--seed', type=int, default=72, help='Random seed.')
+    parser.add_argument('--split-seed', type=int, default=2,
+                        help='random_state for the train/val/test split. '
+                             'Default 2 reproduces all published results; '
+                             'vary it to measure split-to-split variance.')
 
     # training improvements
     parser.add_argument('--grad-clip', type=float, default=1.0, help='Gradient clipping max norm.')
@@ -261,21 +265,30 @@ def train(args):
         index = list(range(3305, len(labels)))
         all_labels = labels[3305:]
 
+    # The split seed is SEPARATE from --seed, which only controls model
+    # initialisation and batch order. Default 2 reproduces every result
+    # published from this repo; vary it to estimate split-to-split variance,
+    # which repeated --seed runs cannot see.
+    split_rs = getattr(args, 'split_seed', 2)
+    if split_rs != 2:
+        logger.info(f'NON-DEFAULT SPLIT: random_state={split_rs} '
+                    f'(not comparable with the frozen-split results)')
+
     if args.use_validation:
         # first split: train vs (val + test)
         idx_train, idx_temp, y_train, y_temp = train_test_split(
             index, all_labels, stratify=all_labels,
-            test_size=args.val_size + 0.60, random_state=2, shuffle=True)
+            test_size=args.val_size + 0.60, random_state=split_rs, shuffle=True)
         # second split: val vs test
         val_fraction = args.val_size / (args.val_size + 0.60)
         idx_val, idx_test, y_val, y_test = train_test_split(
             idx_temp, y_temp, stratify=y_temp,
-            test_size=1 - val_fraction, random_state=2, shuffle=True)
+            test_size=1 - val_fraction, random_state=split_rs, shuffle=True)
         logger.info(f'Split: train={len(idx_train)}, val={len(idx_val)}, test={len(idx_test)}')
     else:
         idx_train, idx_test, y_train, y_test = train_test_split(
             index, all_labels, stratify=all_labels,
-            test_size=0.60, random_state=2, shuffle=True)
+            test_size=0.60, random_state=split_rs, shuffle=True)
         idx_val, y_val = None, None
         logger.info(f'Split: train={len(idx_train)}, test={len(idx_test)}')
 

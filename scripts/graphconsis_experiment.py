@@ -583,7 +583,7 @@ def main():
             runs = [run_capn_once(feat, text6, y, rel_arrays, sel_stats,
                                   idx_tr, idx_val, idx_te, s, use_llm=use_llm,
                                   epochs=args.epochs, device=args.device)
-                    for s in SEEDS]
+                    for s in args.seeds]
             aucs = [r[1] for r in runs]
             aps = [r[2] for r in runs]
             out[vname] = {'auc_mean': float(np.mean(aucs)),
@@ -643,8 +643,13 @@ def main():
              'raw32+text6': np.hstack([feat, text6]).astype(np.float32)}
     out = {}
     for fname, X in feats.items():
-        runs = [run_once(X, y, rel_arrays, idx_tr, idx_val, idx_te, s,
-                         epochs=args.epochs, device=args.device) for s in SEEDS]
+        runs = []
+        for si, s in enumerate(args.seeds, 1):
+            r = run_once(X, y, rel_arrays, idx_tr, idx_val, idx_te, s,
+                         epochs=args.epochs, device=args.device)
+            runs.append(r)
+            print(f'  {fname:12s} seed {s} ({si}/{len(args.seeds)}): '
+                  f'AUC={r[1]:.4f} AP={r[2]:.4f}', flush=True)
         aucs = [r[1] for r in runs]
         aps = [r[2] for r in runs]
         out[fname] = {'auc_mean': float(np.mean(aucs)), 'auc_std': float(np.std(aucs, ddof=1)),
@@ -659,6 +664,8 @@ def main():
     print(f'text6 delta {delta:+.2f}pp  t={t:.2f} p={p:.4f}')
     gtag = '' if 'text_risk_scores.pt' in args.text_file else '_' + \
         args.text_file.split('_')[-1].replace('.pt', '')
+    if len(args.seeds) != 5:          # keep the n=5 table alongside
+        gtag += f'_n{len(args.seeds)}'
     with open(f'results/experiments/graphconsis_table{gtag}.json', 'w', encoding='utf-8') as f:
         json.dump({'protocol': 'frozen YelpChi 25/15/60, val-AUC ckpt, fan-out [10,5], '
                                'eps=1e-3, text6=' + args.text_file, 'results': out}, f, indent=2)
