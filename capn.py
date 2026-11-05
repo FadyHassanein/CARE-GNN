@@ -12,18 +12,80 @@ Key components:
 - LLMPriorLoader: Loads pre-generated LLM domain priors for warm-starting
 """
 
+import hashlib
 import json
 import logging
 import math
 import os
-from collections import OrderedDict
 
+import numpy as np
+import scipy.sparse as sp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions import Beta
 
 logger = logging.getLogger(__name__)
+
+JACCARD_CACHE_DIR = os.path.join('data', 'jaccard_cache')
+
+
+def _build_jaccard_table(adj_list, relation_idx=0):
+    """Precompute the structural Jaccard distance for every edge of one relation.
+
+    The per-pair memoisation this replaces was O(deg^2) in Python set operations
+    and capped at 500k pairs, which thrashes on dense graphs: Amazon's U-S-U
+    relation has mean degree 598 (YelpChi R-U-R has 3), so evaluation spent ~700s
+    per pass recomputing intersections. The graph is static, so instead we compute
+    |N(v) & N(u)| for all edges once via a sparse product and keep the result
+    aligned with the CSR index array. Lookup is then a searchsorted by neighbour
+    id -- order-independent and exact.
+
+    :return: (indptr, indices, jac, deg) where jac[indptr[v]:indptr[v+1]] holds the
+        Jaccard similarity of v with each neighbour in indices[indptr[v]:indptr[v+1]].
+    """
+    keys = np.fromiter(adj_list.keys(), dtype=np.int64, count=len(adj_list))
+    counts = np.fromiter((len(adj_list[k]) for k in keys), dtype=np.int64,
+                         count=len(keys))
+    total = int(counts.sum())
+    cols = np.fromiter((int(j) for k in keys for j in adj_list[k]),
+                       dtype=np.int64, count=total)
+    n = int(max(keys.max(initial=-1), cols.max(initial=-1))) + 1
+    rows = np.repeat(keys, counts)
+    A = sp.csr_matrix((np.ones(total, dtype=np.float32), (rows, cols)),
+                      shape=(n, n))
+    A.sort_indices()
+    indptr, indices = A.indptr, A.indices
+    deg = np.diff(indptr).astype(np.int64)
+
+    key = hashlib.sha1(indptr.tobytes() + indices.tobytes()).hexdigest()[:16]
+    cache_path = os.path.join(JACCARD_CACHE_DIR, f'jaccard_{key}.npy')
+    if os.path.exists(cache_path):
+        jac = np.load(cache_path)
+        if jac.shape == (total,):
+            logger.info(f'Jaccard table for relation {relation_idx}: '
+                        f'loaded {total} edges from {cache_path}')
+            return indptr, indices, jac, deg
+
+    # |N(v) & N(u)| = (A A^T)[v, u]; chunked so the intermediate stays bounded
+    jac = np.empty(total, dtype=np.float64)
+    chunk = max(1, int(2e7 // max(n, 1)))
+    for start in range(0, n, chunk):
+        stop = min(start + chunk, n)
+        inter = (A[start:stop] @ A.T).toarray()
+        for v in range(start, stop):
+            lo, hi = indptr[v], indptr[v + 1]
+            if lo == hi:
+                continue
+            nb = indices[lo:hi]
+            isect = inter[v - start, nb]
+            union = deg[v] + deg[nb] - isect
+            jac[lo:hi] = isect / np.maximum(union, 1)
+    os.makedirs(JACCARD_CACHE_DIR, exist_ok=True)
+    np.save(cache_path, jac)
+    logger.info(f'Jaccard table for relation {relation_idx}: computed {total} '
+                f'edges (n={n}, mean deg {deg.mean():.0f}) -> {cache_path}')
+    return indptr, indices, jac, deg
 
 
 class EnhancedLabelPredictor(nn.Module):
@@ -537,32 +599,45 @@ class MultiViewDistance:
             self.gammas = gamma_init
         else:
             self.gammas = [gamma_init] * num_relations
-        # Cache structural Jaccard distances (graph is static). Bounded LRU:
-        # the plain dict was unbounded and grew to ~1 GB over a full run on
-        # YelpChi (~7.7M edges), OOMing under memory pressure. Memoization is a
-        # pure speed optimisation, so evicting and recomputing is value-identical.
-        self._jaccard_cache = OrderedDict()
-        self._jaccard_cache_max = 500_000
+        # Per-relation edge-aligned Jaccard tables, built lazily and memoised on
+        # disk. Replaces a bounded per-pair LRU that thrashed on dense graphs.
+        self._tables = {}
 
-    def _get_struct_dist(self, center_node, neigh_id, relation_idx):
-        """Cached structural Jaccard distance for a node pair (bounded LRU)."""
-        key = (center_node, neigh_id, relation_idx)
-        cached = self._jaccard_cache.get(key)
-        if cached is not None:
-            self._jaccard_cache.move_to_end(key)
-            return cached
+    def _relation_table(self, relation_idx):
+        table = self._tables.get(relation_idx)
+        if table is None:
+            table = _build_jaccard_table(self.adj_lists[relation_idx], relation_idx)
+            self._tables[relation_idx] = table
+        return table
+
+    def _jaccard_direct(self, center_node, neigh_id, relation_idx):
+        """Set-based Jaccard, for a pair that is not an edge of this relation."""
         adj_list = self.adj_lists[relation_idx]
         center_neighs = adj_list.get(center_node, set())
         neigh_neighs = adj_list.get(neigh_id, set())
-        if len(center_neighs) > 0 or len(neigh_neighs) > 0:
-            jaccard = len(center_neighs & neigh_neighs) / max(len(center_neighs | neigh_neighs), 1)
-        else:
-            jaccard = 0.0
-        dist = 1.0 - jaccard
-        self._jaccard_cache[key] = dist
-        if len(self._jaccard_cache) > self._jaccard_cache_max:
-            self._jaccard_cache.popitem(last=False)  # evict least-recently-used
-        return dist
+        return len(center_neighs & neigh_neighs) / max(len(center_neighs | neigh_neighs), 1)
+
+    def _struct_dists(self, center_node, neighs_indices, relation_idx):
+        """Structural Jaccard distances from one centre to many neighbours."""
+        indptr, indices, jac, _ = self._relation_table(relation_idx)
+        nb = np.fromiter((int(u) for u in neighs_indices), dtype=np.int64,
+                         count=len(neighs_indices))
+        out = np.ones(len(nb), dtype=np.float64)
+        hit = np.zeros(len(nb), dtype=bool)
+        if 0 <= center_node < len(indptr) - 1:
+            lo, hi = int(indptr[center_node]), int(indptr[center_node + 1])
+            if hi > lo:
+                row = indices[lo:hi]
+                clipped = np.minimum(np.searchsorted(row, nb), hi - lo - 1)
+                hit = row[clipped] == nb
+                out[hit] = 1.0 - jac[lo + clipped[hit]]
+        for i in np.flatnonzero(~hit):  # neighbour outside this relation's edges
+            out[i] = 1.0 - self._jaccard_direct(center_node, int(nb[i]), relation_idx)
+        return out
+
+    def _get_struct_dist(self, center_node, neigh_id, relation_idx):
+        """Structural Jaccard distance for a single node pair."""
+        return float(self._struct_dists(center_node, [neigh_id], relation_idx)[0])
 
     def compute_distance(self, center_score, neigh_scores, neighs_indices,
                          center_node, relation_idx):
@@ -583,11 +658,10 @@ class MultiViewDistance:
         if label_dist.dim() == 0:
             label_dist = label_dist.unsqueeze(0)
 
-        # structural Jaccard distance (cached)
+        # structural Jaccard distance (precomputed edge-aligned table)
         if self.adj_lists is not None:
-            center_node_int = int(center_node)
-            struct_dists = [self._get_struct_dist(center_node_int, int(n), relation_idx)
-                           for n in neighs_indices]
+            struct_dists = self._struct_dists(int(center_node), neighs_indices,
+                                              relation_idx)
             struct_dist = torch.tensor(struct_dists, device=label_dist.device, dtype=label_dist.dtype)
         else:
             struct_dist = torch.zeros_like(label_dist)
