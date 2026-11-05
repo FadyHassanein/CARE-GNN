@@ -1,0 +1,49 @@
+% Figure 2 -- the CAPN mechanism. Column-native TikZ. The z_v channel is drawn
+% as PRESENT (it is active in R4); whether it contributes is a Section 4
+% question and is stated in the caption, not encoded in the linework.
+\begin{tikzpicture}[
+  font=\scriptsize,
+  bx/.style    ={draw, line width=0.7pt, rounded corners=2pt, align=center,
+                 inner xsep=4pt, inner ysep=3.5pt},
+  flow/.style  ={-{Stealth[length=4.5pt,width=3.5pt]}, line width=0.8pt},
+  lbl/.style   ={font=\scriptsize, inner sep=1.5pt},
+]
+
+% --- state inputs -----------------------------------------------------------
+\node[bx, draw=cMute, text width=2.5cm] (inp) at (0,0)
+  {node features\\ label confidence\\ degree, distance,\\ overlap, variance};
+
+\node[bx, draw=cSem, fill=cSemBg, text width=2.5cm, below=0.4cm of inp] (zv)
+  {LLM scores $z_v$};
+
+% --- state -> policy --------------------------------------------------------
+\node[bx, draw=cAdapt, fill=cAdaptBg, text width=1.9cm,
+      right=0.6cm of inp.east, yshift=-0.75cm] (state)
+  {state\\ $s_{v,r}$};
+
+\draw[flow, color=cMute] (inp.east) -- ($(state.west)+(0,0.25cm)$);
+\draw[flow, color=cSem]  (zv.east)  -- ($(state.west)+(0,-0.25cm)$);
+
+\node[bx, draw=cAdapt, fill=cAdaptBg, text width=2.4cm,
+      right=0.55cm of state] (pol)
+  {\textcolor{cAdapt}{\textbf{Beta policy}}\\
+   $\theta_{v,r}\!\sim\!\mathrm{Beta}(\alpha,\beta)$};
+\draw[flow, color=cAdapt] (state.east) -- (pol.west);
+
+% --- the two uses of theta --------------------------------------------------
+\node[bx, draw=cStruct, fill=cStructBg, text width=2.9cm,
+      right=0.75cm of pol.east, yshift=0.72cm] (filt)
+  {\textcolor{cStruct}{\textbf{neighbour filter}}\\
+   keep $\lceil\theta_{v,r}|\mathcal{N}_r(v)|\rceil$\\ nearest};
+
+\node[bx, draw=cStruct, fill=cStructBg, text width=2.9cm,
+      right=0.75cm of pol.east, yshift=-0.78cm] (mix)
+  {\textcolor{cStruct}{\textbf{relation weight}}\\
+   $\omega_r=\bar{\theta}_{\cdot,r}$};
+
+\draw[flow, color=cAdapt] (pol.east) -- ++(0.3cm,0) |- (filt.west);
+\draw[flow, color=cAdapt] (pol.east) -- ++(0.3cm,0) |- (mix.west);
+
+\node[lbl, text=cAdapt, below=0.18cm of pol.south, align=center]
+  {one learned threshold,\\ two uses};
+\end{tikzpicture}

@@ -1,0 +1,42 @@
+% Figure 1 -- the three-pillar framework. Column-native TikZ (text set in
+% document points, so it stays legible at 8.6cm). Architecture only: result
+% numbers belong in Section 4 and would drift if duplicated here.
+\begin{tikzpicture}[
+  font=\scriptsize,
+  pill/.style ={draw, line width=0.7pt, rounded corners=2pt, align=center,
+                inner xsep=4pt, inner ysep=3.5pt},
+  flow/.style ={-{Stealth[length=4.5pt,width=3.5pt]}, line width=0.8pt},
+  lbl/.style  ={font=\scriptsize, inner sep=1.5pt, align=left},
+]
+
+\node[pill, fill=cSemBg, draw=cSem, text width=6.6cm] (sem) at (0,2.55)
+  {\textcolor{cSem}{\textbf{Semantic pillar}}\\[1pt]
+   six fraud-specific text scores\\
+   {\itshape LLM or zero-cost heuristic; cached once}};
+
+\node[pill, fill=cStructBg, draw=cStruct, text width=4.0cm] (struct) at (-1.0,0.6)
+  {\textcolor{cStruct}{\textbf{Structural pillar}}\\[1pt]
+   filter $+$ multi-relation\\ aggregation};
+
+\node[pill, fill=cOut, draw=cOut, text=white, text width=1.25cm] (out) at (2.75,0.6)
+  {\textbf{fraud}\\\textbf{score}};
+
+\node[pill, fill=cAdaptBg, draw=cAdapt, text width=6.6cm] (adapt) at (0,-1.45)
+  {\textcolor{cAdapt}{\textbf{Adaptive pillar}}\\[1pt]
+   actor--critic policy emitting a threshold\\
+   $\theta_{v,r}$ for every node and relation};
+
+% door 1: text -> features
+\draw[flow, color=cSem] (-2.0,1.98) -- (-2.0,1.17)
+  node[lbl, text=cSem, midway, right=2pt] {door 1: gated residual\\ $\to$ node features};
+
+% door 2: scores -> policy state  (active in R4)
+\draw[flow, color=cSem] (2.6,1.98) -- (2.6,-0.88)
+  node[lbl, text=cSem, pos=0.80, left=2pt] {door 2:\\ $\to$ policy state};
+
+% theta -> filter
+\draw[flow, color=cAdapt] (-2.4,-0.88) -- (-2.4,0.03)
+  node[lbl, text=cAdapt, midway, right=2pt] {$\theta_{v,r}$ sets how many\\ neighbours survive};
+
+\draw[flow, color=cStruct] (struct.east) -- (out.west);
+\end{tikzpicture}

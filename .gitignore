@@ -42,3 +42,14 @@ figures/
 backup.py
 *.DS_Store
 Thumbs.db
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.out
+*.log
+*.synctex.gz
+
+# Office lock files
+~$*
