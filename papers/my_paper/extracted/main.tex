@@ -44,8 +44,8 @@
 %\correspondingauthor{bob.jones@university.edu}
 
 \setabstract{%
-  Graph neural networks are a standard substrate for fraud detection on multi-relation review graphs, yet sophisticated fraudsters evade neighbourhood aggregation by camouflaging both node attributes and connections. Existing defences are partial: reinforcement-learning approaches such as CARE-GNN rely on heuristic bandits with limited per-node adaptability and no external signal, while recent GNN--LLM integrations enrich node features but lack a learned policy for dynamic relation weighting. We propose a three-pillar framework unifying structural, adaptive, and semantic reasoning under a single joint objective. The structural pillar is a multi-relation GNN backbone---instantiated with CARE-GNN, though not limited to it; the adaptive pillar, the Camouflage-Aware Policy Network, replaces the heuristic bandit with an actor--critic policy that learns per-node, per-relation filtering thresholds; the semantic pillar injects LLM-derived reasoning scores into the policy state and fraud-specific textual risk scores into node features via a dimensionality-preserving gated residual.
-  On YelpChi the full framework improves on its structural base by $+2.70$~pp AUC across twenty held-out seeds, and by $+1.80$~pp across ten independent data splits ($10/10$ positive, $p=3\times10^{-6}$). We report both, because repeated seeds on a fixed split measure only initialisation variance---which we find is $2.4$--$2.8\times$ smaller than the split-to-split variance that a generalisation claim actually rests on. Both learned pillars contribute significantly and compose, and the adaptive pillar replicates on a second dataset. The semantic signal generalises well beyond the framework: concatenated onto eight backbones spanning linear models, tree ensembles, and relational and spectral GNNs, it significantly improves seven, including the tree-plus-aggregation method that currently leads this benchmark, and a second selection-based GNN by $+6.58$~pp. We further show that the pillar's value lies in \emph{which} six quantities are scored rather than in who scores them---a deterministic, zero-cost scorer matches the language model on every graph backbone tested---so the signal is reproducible with no API dependence.
+  Graph neural networks are a standard substrate for fraud detection on multi-relation review graphs, yet sophisticated fraudsters evade neighbourhood aggregation by camouflaging both attributes and connections. Existing defences are partial: reinforcement-learning approaches such as CARE-GNN use a heuristic bandit with one global threshold per relation and no external signal, while GNN--LLM integrations enrich node features but learn no filtering policy. We propose a three-pillar framework unifying structural, adaptive and semantic reasoning under one objective: a multi-relation GNN backbone; an actor--critic policy that replaces the bandit with per-node, per-relation thresholds; and six LLM-derived textual risk scores injected through a dimensionality-preserving gated residual.
+  On YelpChi the framework improves its structural base by $+1.80$~pp AUC across ten independently drawn data splits ($10/10$, $p=3\times10^{-6}$), and by $+2.70$~pp across twenty held-out seeds on a single frozen split. We lead with the former, because repeated seeds on one split measure only initialisation variance---which we find is $2.4$--$2.8\times$ smaller than the split variance a generalisation claim rests on. Every pillar clears significance on held-out seeds, and the adaptive and semantic pillars compose in both stacking orders. Attached unchanged to a second selection-based backbone the framework adds $+8.61$~pp ($p<10^{-4}$), and the adaptive pillar is significant on three hosts across two datasets. The semantic signal travels further still: concatenated onto eight backbones spanning linear models, tree ensembles, and relational and spectral GNNs, it significantly improves seven, including XGB-Graph, the strongest baseline in our comparison. Its value lies in \emph{which} six quantities are scored rather than in who scores them---a deterministic, zero-cost scorer matches the language model on every graph backbone tested---so the signal carries no API dependence.
 }
 
 \keywords{Graph neural networks; Fraud detection; Reinforcement learning; Large language models; Multi-relation graphs}
@@ -406,15 +406,14 @@ together rather than in alternation.
 \section{Experiments}
 \label{sec:results}
 
-Our experiments answer two questions in order. First, the framework question:
-does unifying structural, adaptive, and semantic reasoning improve fraud
-detection over the structural base alone---and which pillar drives the gain?
-We answer it with a pillar-wise ablation on two variants of the CARE-GNN
-backbone. Second, the generality question: how far does the framework carry
-beyond the backbone it was built on? We answer that in two parts---by adding
-its semantic signal, in the simplest possible way, to eight classifiers that
-have nothing else to do with CAPN, and by attaching the entire framework,
-unchanged, to a second selection-based backbone.
+The framework is a \emph{wrapper}: it attaches to a detector that already
+filters neighbours and makes that detector better. The claim it has to support
+is therefore not that it tops a leaderboard, but that a host equipped with it
+beats the same host without it. Our experiments answer three questions in that
+order. First, does attaching it improve its hosts? Second, which pillar does
+the work, and does each earn its place? Third, how far does it reach---both the
+limit of what the policy can attach to, and how much further the semantic
+signal travels on its own.
 
 \subsection{Setup}
 
@@ -445,10 +444,114 @@ the original $40/20/40$ protocol and obtained AUC $0.897$ (Hetero) and $0.850$
 (Homo), matching the published $0.905$/$0.840$ \cite{tang2022bwgnn} closely enough
 to serve as a fair reference.
 
-\subsection{Main result: the unified framework}
+\subsection{Does attaching the framework improve its host?}
+\label{sec:wrapper}
+
+Table~\ref{tab:hosts} summarises the central claim across every host--dataset
+pair we ran. The framework improves all three, and the gain is not an artifact
+of the backbone it was developed on: it is largest on the host it was
+\emph{not} designed for.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{The framework against each host it can attach to. YelpChi figures are
+twenty held-out seeds; the split column reports ten independently drawn data
+splits. Amazon carries no review text, so only the adaptive pillar applies
+there.}
+\label{tab:hosts}
+\begin{tabularx}{\linewidth}{@{}Xccc@{}}
+\toprule
+Host (dataset) & base & + framework & $\Delta$ \\
+\midrule
+CARE-GNN (YelpChi)   & $0.7639$ & $0.7909$ & $+2.70$ \\
+\quad across 10 splits & $0.7635$ & $0.7815$ & $+1.80$ \\
+CARE-GNN (Amazon)$^{\dagger}$ & $0.9378$ & $0.9429$ & $+0.51$ \\
+GraphConsis (YelpChi) & $0.7402$ & $\mathbf{0.8263}$ & $\mathbf{+8.61}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\noindent Every delta in Table~\ref{tab:hosts} is significant: $p<10^{-16}$,
+$p=3\times10^{-6}$, $p=6\times10^{-7}$ and $p<10^{-4}$ respectively, each
+paired seed for seed or split for split. The rest of this subsection takes the
+second host, which is the harder test.
+
+We attach the identical CAPN machinery---policy, critic, shaped reward,
+and gate, unchanged---to GraphConsis \cite{liu2020alleviating}, whose native
+selection filters neighbours by feature consistency against a global threshold.
+Only two elements are backbone-specific: the policy state and the actuation
+point (a per-node consistency threshold replacing the global one). Our
+reimplementation reaches $0.835 \pm 0.023$ at the original $40/20/40$
+protocol---well above published reproductions ($0.62$--$0.70$)---so the wrapper
+is tested on a strong host, not a strawman.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption{Standalone vs.\ framework-integrated GraphConsis, twenty seeds
+(100--119) at the frozen $25/15/60$ split, deltas paired seed for seed. An
+earlier five-seed version of this table reported every comparison as
+non-significant; the discrepancy is discussed in the text.}
+\label{tab:wrapper}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}Xccc@{}}
+\toprule
+Configuration & AUC & \shortstack{$\Delta$ vs.\\ standalone} & $p$ \\
+\midrule
+GraphConsis          & $0.7402 \pm 0.0444$ & --- & --- \\
+\;+\,adaptive        & $0.7670 \pm 0.0337$ & $+2.68$ & $0.015$ \\
+\;+\,semantic        & $0.8060 \pm 0.0519$ & $+6.58$ & $0.0009$ \\
+\;+\,full framework  & $\mathbf{0.8263 \pm 0.0337}$ & $\mathbf{+8.61}$ & $\mathbf{<10^{-4}}$ \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Table~\ref{tab:wrapper} gives the result: every pathway transfers, and the
+complete framework improves the host by $+8.61$~pp ($p<10^{-4}$). The semantic
+pillar carries the larger share ($+6.58$~pp, $18/20$ seeds, $95\%$ CI
+$[+3.07,+10.08]$) and the adaptive pillar is significant here too
+($+2.68$~pp, $p=0.015$)---a larger effect than on CARE-GNN, where it is
+$+0.58$~pp. Stacked on the semantic signal the policy adds a further
+$+2.03$~pp, positive on $13/20$ seeds but not significant ($p=0.15$).
+
+Two things deserve comment. First, the mechanism is visible per seed.
+GraphConsis is volatile---its standalone AUC ranges from $0.600$ to $0.800$
+across the twenty seeds---and the semantic signal does most of its work on the
+bad draws, lifting seed 106 from $0.600$ to $0.838$ and seed 104 from $0.669$
+to $0.833$. That is the dose--response of Section~\ref{sec:generality} taken to
+its limit: this is the weakest host we tested and it shows the largest gain, so
+we read $+8.61$~pp as evidence that the framework \emph{generalises} rather
+than as a headline accuracy result. The configuration still reaches only
+$0.826$.
+
+Second, an earlier five-seed version of this experiment reported all three
+comparisons as non-significant ($+1.20$~pp at $p=0.63$ for the policy,
+$+2.71$~pp at $p=0.38$ for the framework), and we drew the wrong conclusion
+from it: that the adaptive effect was real but below this host's detection
+floor, requiring $n\!\approx\!340$ seeds to resolve. Twenty seeds resolved it.
+The five-seed standalone baseline was also optimistic by $4.4$~pp
+($0.7840$ against $0.7402$). We note this because the same five seeds supported
+a further claim we now withdraw: that the semantic signal reduces this host's
+seed variance by $3.5\times$ ($0.0357 \to 0.0100$). At twenty seeds it does not
+($0.0444 \to 0.0519$; variance ratio $F=0.73$, $p=0.50$). A variance ratio
+estimated at four degrees of freedom carries a confidence interval spanning an
+order of magnitude. On a backbone this volatile, five seeds was simply too few
+for any of these quantities, in either direction.
+
+The wrapper experiment thus establishes portability while completing the
+attribution. The framework transfers with two localised changes, and both
+pathways survive the move: the semantic one at $+1.97$~pp on CARE-GNN and
+$+6.58$~pp here, the adaptive one at $+0.58$~pp, $+0.51$~pp and $+2.68$~pp
+across CARE-GNN on YelpChi, CARE-GNN on Amazon, and GraphConsis respectively.
+The adaptive pillar is therefore significant on three hosts rather than
+confined to the one it was developed on.
+\subsection{Which pillar does the work?}
 \label{sec:ablation}
 
-Table~\ref{tab:framework} builds the framework on the CARE-GNN backbone one
+Having established that the framework improves its hosts, we ask which part is
+responsible. Table~\ref{tab:framework} builds it on the CARE-GNN backbone one
 pillar at a time and reports every configuration twice: on the five exploration
 seeds used throughout development, and---for every headline claim---on twenty
 \emph{held-out} seeds never used in any tuning decision. The structural
@@ -567,12 +670,13 @@ LLM scores $\rightarrow$ policy state (on removal) & $+0.33$ & $0.44$ \\
 \end{tabularx}
 \end{table}
 
-\subsection{Generality I: the semantic pillar beyond the framework}
+\subsection{How far does it reach?}
 \label{sec:generality}
 
-If the semantic pillar is the framework's strongest pathway, a natural question
-is whether that strength is bound to our architecture or is a property of the
-signal itself. Table~\ref{tab:portable} answers it by adding text6 to eight
+The policy needs a neighbour-selection step to actuate on and gradients to
+learn through, which bounds what the whole framework can wrap: tree ensembles
+and spectral models offer neither. The semantic pillar has no such requirement.
+We therefore ask how far it travels on its own. Table~\ref{tab:portable} answers it by adding text6 to eight
 classifiers of increasing strength, from a linear model to XGB-Graph---the
 tree-plus-neighbour-aggregation method that tops YelpChi on the GADBench
 benchmark \cite{tang2023gadbench}. The injection is plain concatenation (only
@@ -674,79 +778,6 @@ taken to its limit---the semantic pillar helps where text exists and features
 leave headroom---so we evaluate the textual pathway on YelpChi and state that
 scope explicitly.
 
-\subsection{Generality II: the framework as a backbone-agnostic wrapper}
-\label{sec:wrapper}
-
-Does richer neighbour selection give the policy more to contribute? We test
-this by attaching the identical CAPN machinery---policy, critic, shaped reward,
-and gate, unchanged---to GraphConsis \cite{liu2020alleviating}, whose native
-selection filters neighbours by feature consistency against a global threshold.
-Only two elements are backbone-specific: the policy state and the actuation
-point (a per-node consistency threshold replacing the global one). Our
-reimplementation reaches $0.835 \pm 0.023$ at the original $40/20/40$
-protocol---well above published reproductions ($0.62$--$0.70$)---so the wrapper
-is tested on a strong host, not a strawman.
-
-\begin{table}[t]
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
-\caption{Standalone vs.\ framework-integrated GraphConsis, twenty seeds
-(100--119) at the frozen $25/15/60$ split, deltas paired seed for seed. An
-earlier five-seed version of this table reported every comparison as
-non-significant; the discrepancy is discussed in the text.}
-\label{tab:wrapper}
-\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}Xccc@{}}
-\toprule
-Configuration & AUC & \shortstack{$\Delta$ vs.\\ standalone} & $p$ \\
-\midrule
-GraphConsis          & $0.7402 \pm 0.0444$ & --- & --- \\
-\;+\,adaptive        & $0.7670 \pm 0.0337$ & $+2.68$ & $0.015$ \\
-\;+\,semantic        & $0.8060 \pm 0.0519$ & $+6.58$ & $0.0009$ \\
-\;+\,full framework  & $\mathbf{0.8263 \pm 0.0337}$ & $\mathbf{+8.61}$ & $\mathbf{<10^{-4}}$ \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-Table~\ref{tab:wrapper} gives the result: every pathway transfers, and the
-complete framework improves the host by $+8.61$~pp ($p<10^{-4}$). The semantic
-pillar carries the larger share ($+6.58$~pp, $18/20$ seeds, $95\%$ CI
-$[+3.07,+10.08]$) and the adaptive pillar is significant here too
-($+2.68$~pp, $p=0.015$)---a larger effect than on CARE-GNN, where it is
-$+0.58$~pp. Stacked on the semantic signal the policy adds a further
-$+2.03$~pp, positive on $13/20$ seeds but not significant ($p=0.15$).
-
-Two things deserve comment. First, the mechanism is visible per seed.
-GraphConsis is volatile---its standalone AUC ranges from $0.600$ to $0.800$
-across the twenty seeds---and the semantic signal does most of its work on the
-bad draws, lifting seed 106 from $0.600$ to $0.838$ and seed 104 from $0.669$
-to $0.833$. That is the dose--response of Section~\ref{sec:generality} taken to
-its limit: this is the weakest host we tested and it shows the largest gain, so
-we read $+8.61$~pp as evidence that the framework \emph{generalises} rather
-than as a headline accuracy result. The configuration still reaches only
-$0.826$.
-
-Second, an earlier five-seed version of this experiment reported all three
-comparisons as non-significant ($+1.20$~pp at $p=0.63$ for the policy,
-$+2.71$~pp at $p=0.38$ for the framework), and we drew the wrong conclusion
-from it: that the adaptive effect was real but below this host's detection
-floor, requiring $n\!\approx\!340$ seeds to resolve. Twenty seeds resolved it.
-The five-seed standalone baseline was also optimistic by $4.4$~pp
-($0.7840$ against $0.7402$). We note this because the same five seeds supported
-a further claim we now withdraw: that the semantic signal reduces this host's
-seed variance by $3.5\times$ ($0.0357 \to 0.0100$). At twenty seeds it does not
-($0.0444 \to 0.0519$; variance ratio $F=0.73$, $p=0.50$). A variance ratio
-estimated at four degrees of freedom carries a confidence interval spanning an
-order of magnitude. On a backbone this volatile, five seeds was simply too few
-for any of these quantities, in either direction.
-
-The wrapper experiment thus establishes portability while completing the
-attribution. The framework transfers with two localised changes, and both
-pathways survive the move: the semantic one at $+1.97$~pp on CARE-GNN and
-$+6.58$~pp here, the adaptive one at $+0.58$~pp, $+0.51$~pp and $+2.68$~pp
-across CARE-GNN on YelpChi, CARE-GNN on Amazon, and GraphConsis respectively.
-The adaptive pillar is therefore significant on three hosts rather than
-confined to the one it was developed on.
 \iffalse
 \subsection{Where this leaves the framework}
 

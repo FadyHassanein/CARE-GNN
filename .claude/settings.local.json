@@ -73,7 +73,9 @@
       "Bash(/c/Users/fadyh/miniconda3/Scripts/conda.exe run *)",
       "Bash(npx *)",
       "Bash(PYTHONPATH=. /c/Users/fadyh/miniconda3/envs/torch_cuda/python.exe *)",
-      "Bash(chmod +x scripts/sweep_lambda_policy.sh)"
+      "Bash(chmod +x scripts/sweep_lambda_policy.sh)",
+      "Bash(PYTHONIOENCODING=utf-8 C:/Users/fadyh/miniconda3/envs/torch_cuda/python.exe -c ' *)",
+      "WebFetch(domain:www.tdcommons.org)"
     ]
   }
 }
